@@ -1,0 +1,29 @@
+{
+  "name": "gridlock-scraper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "tsx --test tests/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.45.2",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "@types/node": "22.19.19",
+    "drizzle-kit": "0.31.10",
+    "husky": "^9.1.7",
+    "tsx": "^4.19.3",
+    "typescript": "5.9.3"
+  }
+}

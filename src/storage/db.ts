@@ -1,4 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
+import { eq, sql } from "drizzle-orm";
+import { drizzle, type SqliteRemoteDatabase } from "drizzle-orm/sqlite-proxy";
+import * as schema from "../schema.js";
 import type {
   ConnectorConfig,
   NewObservation,
@@ -78,6 +81,46 @@ export const DDL_SCHEMA = `
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS development_actions (
+    id TEXT PRIMARY KEY NOT NULL,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    action_type TEXT NOT NULL,
+    action_identifier TEXT,
+    jurisdiction TEXT NOT NULL,
+    status TEXT NOT NULL,
+    filed_date TEXT,
+    decision_date TEXT,
+    details TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS environmental_actions (
+    id TEXT PRIMARY KEY NOT NULL,
+    project_id TEXT NOT NULL REFERENCES projects(id),
+    agency TEXT DEFAULT 'TCEQ' NOT NULL,
+    action_type TEXT NOT NULL,
+    permit_number TEXT,
+    status TEXT NOT NULL,
+    effective_date TEXT,
+    expiration_date TEXT,
+    emissions_summary TEXT,
+    water_usage_summary TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS infrastructure_relationships (
+    id TEXT PRIMARY KEY NOT NULL,
+    source_entity_id TEXT NOT NULL,
+    source_entity_type TEXT NOT NULL,
+    target_entity_id TEXT NOT NULL,
+    target_entity_type TEXT NOT NULL,
+    relationship_type TEXT NOT NULL,
+    capacity TEXT,
+    status TEXT NOT NULL,
+    metadata TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS observations (
     id TEXT PRIMARY KEY NOT NULL,
     subject_type TEXT NOT NULL,
@@ -121,125 +164,114 @@ export function createDatabase(location: string = ":memory:"): DatabaseSync {
   return db;
 }
 
+export type ScraperDrizzleDatabase = SqliteRemoteDatabase<typeof schema>;
+
+export function createDrizzleDatabase(
+  rawDb: DatabaseSync = createDatabase()
+): ScraperDrizzleDatabase {
+  return drizzle(
+    async (sqlQuery, params, method) => {
+      const stmt = rawDb.prepare(sqlQuery);
+      const normalizedParams = params.map((p) => {
+        if (p === undefined || p === null) return null;
+        if (typeof p === "boolean") return p ? 1 : 0;
+        return p as any;
+      });
+      if (method === "all") {
+        const rows = stmt.all(...(normalizedParams as any[]));
+        return { rows: rows.map((r: any) => Object.values(r)) };
+      } else if (method === "get") {
+        const row = stmt.get(...(normalizedParams as any[]));
+        return { rows: (row ? Object.values(row) : undefined) as any };
+      } else {
+        stmt.run(...(normalizedParams as any[]));
+        return { rows: [] };
+      }
+    },
+    { schema }
+  );
+}
+
 export class ScraperRepository {
-  constructor(private readonly db: DatabaseSync) {}
+  public readonly rawDb?: DatabaseSync;
+  public readonly drizzle: ScraperDrizzleDatabase;
 
-  public findSourceArtifactByHash(sha256Hash: string): SourceArtifact | null {
-    const stmt = this.db.prepare(
-      "SELECT * FROM source_artifacts WHERE sha256_hash = ?"
-    );
-    const row = stmt.get(sha256Hash) as any;
-    if (!row) return null;
-    return {
-      id: row.id,
-      sha256Hash: row.sha256_hash,
-      sourceFamily: row.source_family,
-      sourceUrl: row.source_url,
-      contentType: row.content_type,
-      byteSize: Number(row.byte_size),
-      storagePath: row.storage_path,
-      connectorVersion: row.connector_version,
-      capturedAt: row.captured_at,
-    };
-  }
-
-  public insertSourceArtifact(artifact: NewSourceArtifact): string {
-    const existing = this.findSourceArtifactByHash(artifact.sha256Hash);
-    if (existing) return existing.id;
-
-    const id = artifact.id ?? crypto.randomUUID();
-    const stmt = this.db.prepare(`
-      INSERT INTO source_artifacts (
-        id, sha256_hash, source_family, source_url, content_type, byte_size, storage_path, connector_version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(
-      id,
-      artifact.sha256Hash,
-      artifact.sourceFamily,
-      artifact.sourceUrl,
-      artifact.contentType,
-      artifact.byteSize,
-      artifact.storagePath,
-      artifact.connectorVersion
-    );
-    return id;
-  }
-
-  public insertObservations(observations: NewObservation[]): void {
-    if (observations.length === 0) return;
-    const stmt = this.db.prepare(`
-      INSERT INTO observations (
-        id, subject_type, subject_id, property, value_json, effective_at, source_artifact_id, connector_version, confidence, resolution_method
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    for (const obs of observations) {
-      const id = obs.id ?? crypto.randomUUID();
-      stmt.run(
-        id,
-        obs.subjectType,
-        obs.subjectId,
-        obs.property,
-        typeof obs.valueJson === "string"
-          ? obs.valueJson
-          : JSON.stringify(obs.valueJson),
-        obs.effectiveAt ?? null,
-        obs.sourceArtifactId,
-        obs.connectorVersion,
-        obs.confidence ?? 1.0,
-        obs.resolutionMethod ?? "deterministic"
-      );
+  constructor(db: DatabaseSync | ScraperDrizzleDatabase) {
+    if (db instanceof DatabaseSync) {
+      this.rawDb = db;
+      this.drizzle = createDrizzleDatabase(db);
+    } else {
+      this.drizzle = db;
     }
   }
 
-  public getConnectorConfig(id: string): ConnectorConfig | null {
-    const stmt = this.db.prepare("SELECT * FROM connector_configs WHERE id = ?");
-    const row = stmt.get(id) as any;
-    if (!row) return null;
-    return {
-      id: row.id,
-      sourceFamily: row.source_family,
-      enabled: Boolean(row.enabled),
-      manifest: JSON.parse(row.manifest),
-      invariants: JSON.parse(row.invariants),
-      lastRunAt: row.last_run_at,
-      lastStatus: row.last_status,
-      updatedAt: row.updated_at,
-    };
+  public async findSourceArtifactByHash(
+    sha256Hash: string
+  ): Promise<SourceArtifact | null> {
+    const artifact = await this.drizzle
+      .select()
+      .from(schema.sourceArtifacts)
+      .where(eq(schema.sourceArtifacts.sha256Hash, sha256Hash))
+      .get();
+    return artifact ?? null;
   }
 
-  public updateConnectorStatus(
+  public async insertSourceArtifact(
+    artifact: NewSourceArtifact
+  ): Promise<string> {
+    const existing = await this.findSourceArtifactByHash(artifact.sha256Hash);
+    if (existing) return existing.id;
+
+    const id = artifact.id ?? crypto.randomUUID();
+    await this.drizzle.insert(schema.sourceArtifacts).values({
+      ...artifact,
+      id,
+    });
+    return id;
+  }
+
+  public async insertObservations(
+    observations: NewObservation[]
+  ): Promise<void> {
+    if (observations.length === 0) return;
+    const values = observations.map((obs) => ({
+      ...obs,
+      id: obs.id ?? crypto.randomUUID(),
+      confidence: obs.confidence ?? 1.0,
+      resolutionMethod: obs.resolutionMethod ?? "deterministic",
+    }));
+    await this.drizzle.insert(schema.observations).values(values);
+  }
+
+  public async getConnectorConfig(id: string): Promise<ConnectorConfig | null> {
+    const config = await this.drizzle
+      .select()
+      .from(schema.connectorConfigs)
+      .where(eq(schema.connectorConfigs.id, id))
+      .get();
+    return config ?? null;
+  }
+
+  public async updateConnectorStatus(
     id: string,
     status: "ok" | "anomaly" | "repairing" | "error"
-  ): void {
-    const stmt = this.db.prepare(`
-      UPDATE connector_configs
-      SET last_status = ?, last_run_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-    stmt.run(status, id);
+  ): Promise<void> {
+    await this.drizzle
+      .update(schema.connectorConfigs)
+      .set({
+        lastStatus: status,
+        lastRunAt: sql`CURRENT_TIMESTAMP`,
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.connectorConfigs.id, id));
   }
 
-  public insertRepairAudit(audit: NewRepairAudit): string {
+  public async insertRepairAudit(audit: NewRepairAudit): Promise<string> {
     const id = audit.id ?? crypto.randomUUID();
-    const stmt = this.db.prepare(`
-      INSERT INTO repair_audits (
-        id, connector_id, failure_reason, proposed_patch, replay_results, status
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `);
-    stmt.run(
+    await this.drizzle.insert(schema.repairAudits).values({
+      ...audit,
       id,
-      audit.connectorId,
-      audit.failureReason,
-      typeof audit.proposedPatch === "string"
-        ? audit.proposedPatch
-        : JSON.stringify(audit.proposedPatch),
-      typeof audit.replayResults === "string"
-        ? audit.replayResults
-        : JSON.stringify(audit.replayResults),
-      audit.status
-    );
+    });
     return id;
   }
 }

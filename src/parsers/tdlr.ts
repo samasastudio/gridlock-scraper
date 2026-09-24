@@ -43,12 +43,12 @@ export function parseTdlrHtml(html: string): ObservationCandidate[] {
   const city =
     $("#ctl00_ContentPlaceHolder1_lblCity").text().trim() ||
     $("td:contains('City:')").next("td").text().trim() ||
-    "Austin";
+    "";
 
   const county =
     $("#ctl00_ContentPlaceHolder1_lblCounty").text().trim() ||
     $("td:contains('County:')").next("td").text().trim() ||
-    "Travis";
+    "";
 
   const rawProject = {
     projectNumber,

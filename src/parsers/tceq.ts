@@ -13,22 +13,22 @@ export function parseTceqHtml(html: string): ObservationCandidate[] {
     $("#permitNumber").text().trim() ||
     $("td:contains('Permit Number:')").next("td").text().trim() ||
     html.match(/TCEQ-\d{5,9}/)?.[0] ||
-    "TCEQ-10001";
+    "";
 
   const applicantName =
     $("#applicantName").text().trim() ||
     $("td:contains('Applicant:')").next("td").text().trim() ||
-    "Unknown Applicant";
+    "";
 
   const projectName =
     $("#projectName").text().trim() ||
     $("td:contains('Project:')").next("td").text().trim() ||
-    "Data Center Substation & Backup Generators";
+    "";
 
   const county =
     $("#county").text().trim() ||
     $("td:contains('County:')").next("td").text().trim() ||
-    "Travis";
+    "";
 
   const validated = validateTceqInvariants({
     permitNumber,

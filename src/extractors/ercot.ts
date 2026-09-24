@@ -27,10 +27,13 @@ export async function extractErcotQueue(
     const content = await page.content();
     const byteSize = Buffer.byteLength(content, "utf8");
 
+    const isCsv = targetUrl.endsWith(".csv") || targetUrl.includes("queue");
+    const contentType = isCsv ? "text/csv" : "text/html";
+
     return {
       sourceFamily: "ercot_queue",
       sourceUrl: targetUrl,
-      contentType: "text/html",
+      contentType,
       byteSize,
       content,
       connectorVersion: CONNECTOR_VERSION,

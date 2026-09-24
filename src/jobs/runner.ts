@@ -24,6 +24,15 @@ export interface PipelineRunResult {
   anomaly?: boolean;
 }
 
+function getExtensionForContentType(contentType: string): string {
+  const ct = contentType.toLowerCase();
+  if (ct.includes("csv")) return "csv";
+  if (ct.includes("json")) return "json";
+  if (ct.includes("pdf")) return "pdf";
+  if (ct.includes("xml")) return "xml";
+  return "html";
+}
+
 /**
  * Core pipeline runner implementing the Content-Hash Early-Exit and Invariant Gates (ADR-0003).
  */
@@ -37,7 +46,7 @@ export async function runScraperPipeline(
   try {
     rawResult = await options.extractor();
   } catch (err: any) {
-    quarantineExtractionFailure({
+    await quarantineExtractionFailure({
       connectorId: options.connectorId,
       sourceFamily: options.sourceFamily,
       sourceUrl: "unknown",
@@ -63,9 +72,9 @@ export async function runScraperPipeline(
   const sha256Hash = store.computeHash(rawResult.content);
 
   // 1. Content-Hash Early-Exit Check (ADR-0003)
-  const existingArtifact = repo.findSourceArtifactByHash(sha256Hash);
+  const existingArtifact = await repo.findSourceArtifactByHash(sha256Hash);
   if (existingArtifact) {
-    repo.updateConnectorStatus(options.connectorId, "ok");
+    await repo.updateConnectorStatus(options.connectorId, "ok");
     return {
       connectorId: options.connectorId,
       sourceFamily: options.sourceFamily,
@@ -76,9 +85,10 @@ export async function runScraperPipeline(
     };
   }
 
-  // 2. Persist new raw artifact
-  const stored = store.store(options.sourceFamily, rawResult.content, "html");
-  const sourceArtifactId = repo.insertSourceArtifact({
+  // 2. Persist new raw artifact with dynamic extension
+  const extension = getExtensionForContentType(rawResult.contentType);
+  const stored = store.store(options.sourceFamily, rawResult.content, extension);
+  const sourceArtifactId = await repo.insertSourceArtifact({
     sha256Hash,
     sourceFamily: options.sourceFamily,
     sourceUrl: rawResult.sourceUrl,
@@ -93,7 +103,7 @@ export async function runScraperPipeline(
   try {
     candidates = options.parser(contentStr);
   } catch (err: any) {
-    quarantineExtractionFailure({
+    await quarantineExtractionFailure({
       connectorId: options.connectorId,
       sourceFamily: options.sourceFamily,
       sourceUrl: rawResult.sourceUrl,
@@ -126,8 +136,8 @@ export async function runScraperPipeline(
     resolutionMethod: cand.resolutionMethod ?? "deterministic",
   }));
 
-  repo.insertObservations(observations);
-  repo.updateConnectorStatus(options.connectorId, "ok");
+  await repo.insertObservations(observations);
+  await repo.updateConnectorStatus(options.connectorId, "ok");
 
   return {
     connectorId: options.connectorId,

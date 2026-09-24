@@ -16,10 +16,10 @@ export interface QuarantineParams {
  * Quarantines an anomalous extraction failure, saves the raw artifact,
  * and sets the connector status to "anomaly" without corrupting production entities (ADR-0004).
  */
-export function quarantineExtractionFailure(params: QuarantineParams): {
+export async function quarantineExtractionFailure(params: QuarantineParams): Promise<{
   artifactId: string;
   auditId: string;
-} {
+}> {
   const repo = new ScraperRepository(params.db);
   const stored = params.artifactStore.store(
     `quarantine/${params.sourceFamily}`,
@@ -27,7 +27,7 @@ export function quarantineExtractionFailure(params: QuarantineParams): {
     "html"
   );
 
-  const artifactId = repo.insertSourceArtifact({
+  const artifactId = await repo.insertSourceArtifact({
     sha256Hash: stored.sha256Hash,
     sourceFamily: params.sourceFamily,
     sourceUrl: params.sourceUrl,
@@ -37,9 +37,9 @@ export function quarantineExtractionFailure(params: QuarantineParams): {
     connectorVersion: "quarantine",
   });
 
-  repo.updateConnectorStatus(params.connectorId, "anomaly");
+  await repo.updateConnectorStatus(params.connectorId, "anomaly");
 
-  const auditId = repo.insertRepairAudit({
+  const auditId = await repo.insertRepairAudit({
     connectorId: params.connectorId,
     failureReason: params.failureReason,
     proposedPatch: {},

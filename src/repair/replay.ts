@@ -18,13 +18,13 @@ export interface ReplayEvaluationResult {
  * Historical replay test harness verifying candidate selector patches
  * against frozen fixtures before promotion (ADR-0004).
  */
-export function evaluateCandidatePatch(
+export async function evaluateCandidatePatch(
   connectorId: string,
   proposedPatchDescription: Record<string, unknown>,
   candidateParser: (content: string) => ObservationCandidate[],
   fixtures: ReplayFixture[],
   db: DatabaseSync
-): ReplayEvaluationResult {
+): Promise<ReplayEvaluationResult> {
   let passed = 0;
 
   for (const fixture of fixtures) {
@@ -44,7 +44,7 @@ export function evaluateCandidatePatch(
   const allPassed = fixtures.length > 0 && passed === fixtures.length;
   const repo = new ScraperRepository(db);
 
-  const auditId = repo.insertRepairAudit({
+  const auditId = await repo.insertRepairAudit({
     connectorId,
     failureReason: "Self-healing candidate verification replay",
     proposedPatch: proposedPatchDescription,
@@ -53,7 +53,7 @@ export function evaluateCandidatePatch(
   });
 
   if (allPassed) {
-    repo.updateConnectorStatus(connectorId, "ok");
+    await repo.updateConnectorStatus(connectorId, "ok");
   }
 
   return {

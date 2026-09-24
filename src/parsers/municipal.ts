@@ -13,16 +13,16 @@ export function parseMunicipalAgenda(html: string): ObservationCandidate[] {
     $(".action-identifier").first().text().trim() ||
     $("td:contains('Case #:')").next("td").text().trim() ||
     html.match(/C\d{2}-\d{4}-\d{4}/)?.[0] ||
-    "C14-2024-0042";
+    "";
 
   const jurisdiction =
     $(".jurisdiction").first().text().trim() ||
-    "Austin";
+    "";
 
   const title =
     $(".action-title").first().text().trim() ||
     $("td:contains('Item Title:')").next("td").text().trim() ||
-    "Zoning change request for hyperscale data center campus";
+    "";
 
   const statusRaw =
     $(".action-status").first().text().trim().toLowerCase() ||

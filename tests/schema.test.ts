@@ -78,6 +78,46 @@ test("SQLite initialization and schema verification for gridlock-scraper", () =>
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
     );
 
+    CREATE TABLE development_actions (
+      id TEXT PRIMARY KEY NOT NULL,
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      action_type TEXT NOT NULL,
+      action_identifier TEXT,
+      jurisdiction TEXT NOT NULL,
+      status TEXT NOT NULL,
+      filed_date TEXT,
+      decision_date TEXT,
+      details TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );
+
+    CREATE TABLE environmental_actions (
+      id TEXT PRIMARY KEY NOT NULL,
+      project_id TEXT NOT NULL REFERENCES projects(id),
+      agency TEXT DEFAULT 'TCEQ' NOT NULL,
+      action_type TEXT NOT NULL,
+      permit_number TEXT,
+      status TEXT NOT NULL,
+      effective_date TEXT,
+      expiration_date TEXT,
+      emissions_summary TEXT,
+      water_usage_summary TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );
+
+    CREATE TABLE infrastructure_relationships (
+      id TEXT PRIMARY KEY NOT NULL,
+      source_entity_id TEXT NOT NULL,
+      source_entity_type TEXT NOT NULL,
+      target_entity_id TEXT NOT NULL,
+      target_entity_type TEXT NOT NULL,
+      relationship_type TEXT NOT NULL,
+      capacity TEXT,
+      status TEXT NOT NULL,
+      metadata TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL
+    );
+
     CREATE TABLE observations (
       id TEXT PRIMARY KEY NOT NULL,
       subject_type TEXT NOT NULL,
@@ -127,6 +167,9 @@ test("SQLite initialization and schema verification for gridlock-scraper", () =>
   assert.ok(tables.includes("repair_audits"));
   assert.ok(tables.includes("projects"));
   assert.ok(tables.includes("facilities"));
+  assert.ok(tables.includes("development_actions"));
+  assert.ok(tables.includes("environmental_actions"));
+  assert.ok(tables.includes("infrastructure_relationships"));
 
   // 1. Verify source artifact insertion
   const artifactId = "art-001";
@@ -225,4 +268,8 @@ test("SQLite initialization and schema verification for gridlock-scraper", () =>
   assert.ok(schema.connectorConfigs);
   assert.ok(schema.repairAudits);
   assert.ok(schema.projects);
+  assert.ok(schema.facilities);
+  assert.ok(schema.developmentActions);
+  assert.ok(schema.environmentalActions);
+  assert.ok(schema.infrastructureRelationships);
 });

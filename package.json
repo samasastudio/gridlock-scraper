@@ -8,13 +8,16 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "tsx --test tests/**/*.test.ts",
+    "test": "tsx --test tests/*.test.ts \"tests/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "prepare": "husky"
+    "prepare": "husky",
+    "install:browsers": "playwright install chromium"
   },
   "dependencies": {
+    "cheerio": "^1.2.0",
     "drizzle-orm": "0.45.2",
+    "playwright": "^1.63.0",
     "zod": "^3.24.2"
   },
   "devDependencies": {

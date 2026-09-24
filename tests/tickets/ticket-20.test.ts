@@ -1,31 +1,46 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
-test("Ticket 20 - Criteria 1: CLI entrypoint src/cli.ts exists", () => {
+test("Ticket 20 - Criteria 1 & 5: CLI parses arguments (--source, --dry-run, --force)", async () => {
   const cliPath = path.resolve(process.cwd(), "src/cli.ts");
-  assert.ok(fs.existsSync(cliPath), "Expected src/cli.ts entrypoint to exist");
+  assert.ok(fs.existsSync(cliPath), "src/cli.ts entrypoint file must exist");
+
+  const cliModule = await import("../../src/cli.js").catch(() => null);
+  assert.ok(cliModule, "src/cli.ts must be exportable or executable");
+
+  if (cliModule && typeof cliModule.parseArgs === "function") {
+    const parsed = cliModule.parseArgs(["--source=tdlr", "--dry-run", "--force"]);
+    assert.equal(parsed.source, "tdlr");
+    assert.equal(parsed.dryRun, true);
+    assert.equal(parsed.force, true);
+  }
 });
 
-test("Ticket 20 - Criteria 2: CLI parses source filtering, dry-run, and force flags", () => {
-  const cliPath = path.resolve(process.cwd(), "src/cli.ts");
-  if (!fs.existsSync(cliPath)) {
-    assert.fail("src/cli.ts not implemented");
-  }
-  const content = fs.readFileSync(cliPath, "utf8");
-  assert.match(content, /--source/, "CLI must support --source argument");
-  assert.match(content, /--dry-run/, "CLI must support --dry-run argument");
-  assert.match(content, /--force/, "CLI must support --force argument");
+test("Ticket 20 - Criteria 2: CLI exits with code 0 on dry-run or clean completion", () => {
+  const result = spawnSync("npx", ["tsx", "src/cli.ts", "--source=all", "--dry-run"], {
+    cwd: process.cwd(),
+    encoding: "utf-8",
+    shell: true,
+  });
+
+  assert.equal(result.status, 0, `Expected CLI exit code 0 on clean dry-run, got ${result.status}. Output: ${result.stderr}`);
 });
 
-test("Ticket 20 - Criteria 3: Exit code protocol (0=clean, 1=crash, 2=anomaly quarantined)", () => {
-  const cliPath = path.resolve(process.cwd(), "src/cli.ts");
-  if (!fs.existsSync(cliPath)) {
-    assert.fail("src/cli.ts not implemented");
-  }
-  const content = fs.readFileSync(cliPath, "utf8");
-  assert.match(content, /process\.exit\(0\)/, "CLI must exit with 0 on success");
-  assert.match(content, /process\.exit\(1\)/, "CLI must exit with 1 on crash");
-  assert.match(content, /process\.exit\(2\)/, "CLI must exit with 2 on anomaly quarantine");
+test("Ticket 20 - Criteria 3: CLI exits with code 1 on unknown flag or fatal syntax error", () => {
+  const result = spawnSync("npx", ["tsx", "src/cli.ts", "--source=unsupported_unknown_portal"], {
+    cwd: process.cwd(),
+    encoding: "utf-8",
+    shell: true,
+  });
+
+  assert.equal(result.status, 1, `Expected CLI exit code 1 on unsupported source, got ${result.status}`);
+});
+
+test("Ticket 20 - Criteria 4: CLI exits with code 2 on anomaly quarantine", async () => {
+  const cliModule = await import("../../src/cli.js").catch(() => null);
+  assert.ok(cliModule, "src/cli.ts must export exitCode constants or handlers");
+  assert.equal(cliModule.EXIT_CODES?.ANOMALY_QUARANTINE, 2, "Anomaly quarantine must map to process exit code 2");
 });

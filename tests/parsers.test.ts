@@ -58,6 +58,33 @@ test("TDLR pure parser rejects HTML missing city/county without falling back to 
   });
 });
 
+test("TDLR pure parser rejects HTML missing or non-numeric estimated cost without zero fallback", () => {
+  const htmlMissingCost = `
+    <html><body>
+      <span id="ctl00_ContentPlaceHolder1_lblProjectNumber">TABS2024999999</span>
+      <span id="ctl00_ContentPlaceHolder1_lblProjectName">Dallas Substation</span>
+      <span id="ctl00_ContentPlaceHolder1_lblCity">Dallas</span>
+      <span id="ctl00_ContentPlaceHolder1_lblCounty">Dallas</span>
+    </body></html>
+  `;
+  assert.throws(() => {
+    parseTdlrHtml(htmlMissingCost);
+  });
+
+  const htmlNaCost = `
+    <html><body>
+      <span id="ctl00_ContentPlaceHolder1_lblProjectNumber">TABS2024999999</span>
+      <span id="ctl00_ContentPlaceHolder1_lblProjectName">Dallas Substation</span>
+      <span id="ctl00_ContentPlaceHolder1_lblEstimatedCost">N/A</span>
+      <span id="ctl00_ContentPlaceHolder1_lblCity">Dallas</span>
+      <span id="ctl00_ContentPlaceHolder1_lblCounty">Dallas</span>
+    </body></html>
+  `;
+  assert.throws(() => {
+    parseTdlrHtml(htmlNaCost);
+  });
+});
+
 test("ERCOT pure parser extracts facilities from CSV fixture", () => {
   const csv = readFileSync(
     join(FIXTURES_DIR, "ercot", "queue-sample.csv"),
@@ -114,6 +141,15 @@ test("ERCOT pure parser throws on missing required headers", () => {
   });
 });
 
+test("ERCOT pure parser throws on empty or header-only CSV", () => {
+  assert.throws(() => {
+    parseErcotCsv("");
+  });
+  assert.throws(() => {
+    parseErcotCsv("INR,Project Name,Fuel,MW,County\n");
+  });
+});
+
 test("TCEQ pure parser extracts environmental permit from fixture", () => {
   const html = readFileSync(
     join(FIXTURES_DIR, "tceq", "permit-sample.html"),
@@ -135,17 +171,22 @@ test("TCEQ pure parser rejects broken/error HTML without synthetic fallbacks", (
   });
 });
 
-test("Municipal pure parser extracts zoning action from fixture", () => {
+test("Municipal pure parser extracts multiple zoning actions from fixture", () => {
   const html = readFileSync(
     join(FIXTURES_DIR, "municipal", "agenda-sample.html"),
     "utf8"
   );
   const observations = parseMunicipalAgenda(html);
 
-  assert.equal(observations.length, 1);
-  const actionObs = observations[0]!;
-  assert.equal(actionObs.subjectId, "C14-2024-0099");
-  assert.equal((actionObs.valueJson as any).status, "approved");
+  assert.equal(observations.length, 2);
+  const obs1 = observations.find((o) => o.subjectId === "C14-2024-0099");
+  assert.ok(obs1);
+  assert.equal((obs1.valueJson as any).status, "approved");
+
+  const obs2 = observations.find((o) => o.subjectId === "C14-2024-0100");
+  assert.ok(obs2);
+  assert.equal((obs2.valueJson as any).jurisdiction, "Taylor");
+  assert.equal((obs2.valueJson as any).status, "under_review");
 });
 
 test("Municipal pure parser rejects HTML missing case identifier or jurisdiction", () => {

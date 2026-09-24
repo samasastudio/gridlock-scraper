@@ -243,6 +243,79 @@ export class ScraperRepository {
     await this.drizzle.insert(schema.observations).values(values);
   }
 
+  public async commitNewArtifactWithObservations(params: {
+    artifact: NewSourceArtifact;
+    observations: (sourceArtifactId: string) => NewObservation[];
+    connectorId?: string;
+  }): Promise<{ artifactId: string; observationsCount: number }> {
+    return await this.drizzle.transaction(async (tx) => {
+      const artifactId = params.artifact.id ?? crypto.randomUUID();
+      await tx.insert(schema.sourceArtifacts).values({
+        ...params.artifact,
+        id: artifactId,
+      });
+
+      const obsList = params.observations(artifactId);
+      if (obsList.length > 0) {
+        const values = obsList.map((obs) => ({
+          ...obs,
+          id: obs.id ?? crypto.randomUUID(),
+          confidence: obs.confidence ?? 1.0,
+          resolutionMethod: obs.resolutionMethod ?? "deterministic",
+        }));
+        await tx.insert(schema.observations).values(values);
+      }
+
+      if (params.connectorId) {
+        await tx
+          .update(schema.connectorConfigs)
+          .set({
+            lastStatus: "ok",
+            lastRunAt: sql`CURRENT_TIMESTAMP`,
+            updatedAt: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(schema.connectorConfigs.id, params.connectorId));
+      }
+
+      return { artifactId, observationsCount: obsList.length };
+    });
+  }
+
+  public async commitReprocessedQuarantine(params: {
+    artifactId: string;
+    connectorVersion: string;
+    observations: NewObservation[];
+    connectorId: string;
+  }): Promise<void> {
+    await this.drizzle.transaction(async (tx) => {
+      await tx
+        .update(schema.sourceArtifacts)
+        .set({
+          connectorVersion: params.connectorVersion,
+        })
+        .where(eq(schema.sourceArtifacts.id, params.artifactId));
+
+      if (params.observations.length > 0) {
+        const values = params.observations.map((obs) => ({
+          ...obs,
+          id: obs.id ?? crypto.randomUUID(),
+          confidence: obs.confidence ?? 1.0,
+          resolutionMethod: obs.resolutionMethod ?? "deterministic",
+        }));
+        await tx.insert(schema.observations).values(values);
+      }
+
+      await tx
+        .update(schema.connectorConfigs)
+        .set({
+          lastStatus: "ok",
+          lastRunAt: sql`CURRENT_TIMESTAMP`,
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(schema.connectorConfigs.id, params.connectorId));
+    });
+  }
+
   public async getConnectorConfig(id: string): Promise<ConnectorConfig | null> {
     const config = await this.drizzle
       .select()

@@ -6,7 +6,7 @@ import { runScraperPipeline } from "../src/jobs/runner.js";
 import { parseTdlrHtml } from "../src/parsers/tdlr.js";
 import { evaluateCandidatePatch } from "../src/repair/replay.js";
 import { ArtifactStore } from "../src/storage/artifact-store.js";
-import { createDatabase } from "../src/storage/db.js";
+import { createDatabase, ScraperRepository } from "../src/storage/db.js";
 
 const SAMPLE_TDLR_HTML = `
 <html><body>
@@ -161,4 +161,133 @@ test("Database initialization creates all canonical tables without omission", ()
   assert.ok(tableNames.includes("connector_configs"));
   assert.ok(tableNames.includes("repair_audits"));
   assert.equal(tableNames.length, 11);
+});
+
+test("Pipeline reprocesses quarantined artifact upon verified repair", async () => {
+  const tempDir = mkdtempSync(`${tmpdir()}/gridlock-test-reprocess-`);
+  const store = new ArtifactStore(tempDir);
+  const db = createDatabase(":memory:");
+
+  db.prepare(`
+    INSERT INTO connector_configs (id, source_family, manifest, invariants)
+    VALUES ('tdlr_repairable', 'tdlr_tabs', '{}', '{}')
+  `).run();
+
+  const validHtml = SAMPLE_TDLR_HTML;
+
+  // 1. Initial run with a broken parser that throws an invariant error
+  const brokenParser = () => {
+    throw new Error("Drifted selector failure");
+  };
+
+  const res1 = await runScraperPipeline({
+    connectorId: "tdlr_repairable",
+    sourceFamily: "tdlr_tabs",
+    extractor: async () => ({
+      sourceFamily: "tdlr_tabs" as const,
+      sourceUrl: "https://www.tdlr.texas.gov/TABS/test",
+      contentType: "text/html",
+      byteSize: Buffer.byteLength(validHtml),
+      content: validHtml,
+      connectorVersion: "1.0.0",
+    }),
+    parser: brokenParser,
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(res1.anomaly, true);
+  assert.equal(res1.observationsCount, 0);
+
+  // 2. Second run on identical payload but with repaired healthy parser
+  const res2 = await runScraperPipeline({
+    connectorId: "tdlr_repairable",
+    sourceFamily: "tdlr_tabs",
+    extractor: async () => ({
+      sourceFamily: "tdlr_tabs" as const,
+      sourceUrl: "https://www.tdlr.texas.gov/TABS/test",
+      contentType: "text/html",
+      byteSize: Buffer.byteLength(validHtml),
+      content: validHtml,
+      connectorVersion: "1.0.1",
+    }),
+    parser: parseTdlrHtml, // Repaired parser
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(res2.earlyExit, false);
+  assert.ok(res2.observationsCount > 0);
+  assert.equal(res2.sourceArtifactId, res1.sourceArtifactId);
+
+  // Verify status is now "ok" and version updated from quarantine
+  const statusRow = db
+    .prepare("SELECT last_status FROM connector_configs WHERE id = 'tdlr_repairable'")
+    .get() as any;
+  assert.equal(statusRow.last_status, "ok");
+
+  const artifactRow = db
+    .prepare("SELECT connector_version FROM source_artifacts WHERE id = ?")
+    .get(res2.sourceArtifactId) as any;
+  assert.equal(artifactRow.connector_version, "1.0.1");
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+
+test("Atomic commit rolls back source_artifact if observation insert fails", async () => {
+  const db = createDatabase(":memory:");
+  const repo = new ScraperRepository(db);
+
+  await assert.rejects(async () => {
+    await repo.commitNewArtifactWithObservations({
+      artifact: {
+        sha256Hash: "atomic-test-hash",
+        sourceFamily: "tdlr_tabs",
+        sourceUrl: "https://test.example.com",
+        contentType: "text/html",
+        byteSize: 100,
+        storagePath: "test-path",
+        connectorVersion: "1.0.0",
+      },
+      observations: () => {
+        throw new Error("Simulated downstream insertion explosion");
+      },
+    });
+  });
+
+  const artifact = await repo.findSourceArtifactByHash("atomic-test-hash");
+  assert.equal(artifact, null, "Artifact must be rolled back on observation error");
+});
+
+test("Replay harness rejects candidate patches that regress observation counts or IDs", async () => {
+  const db = createDatabase(":memory:");
+
+  db.prepare(`
+    INSERT INTO connector_configs (id, source_family, manifest, invariants)
+    VALUES ('test_eval_regress', 'tdlr_tabs', '{}', '{}')
+  `).run();
+
+  const fixtures = [
+    {
+      id: "fix-count",
+      content: SAMPLE_TDLR_HTML,
+      expectedMinCount: 10, // Expects 10, but parseTdlrHtml produces ~3
+    },
+  ];
+
+  const evalResult = await evaluateCandidatePatch(
+    "test_eval_regress",
+    { selector: "broken" },
+    parseTdlrHtml,
+    fixtures,
+    db
+  );
+
+  assert.equal(evalResult.allPassed, false);
+  assert.equal(evalResult.passed, 0);
+
+  const configRow = db
+    .prepare("SELECT last_status FROM connector_configs WHERE id = 'test_eval_regress'")
+    .get() as any;
+  assert.equal(configRow.last_status, "idle"); // Not promoted to ok
 });

@@ -39,7 +39,9 @@ export function parseErcotCsv(csvContent: string): ObservationCandidate[] {
     .map((l) => l.trim())
     .filter((l) => l.length > 0);
 
-  if (lines.length < 2) return [];
+  if (lines.length < 2) {
+    throw new Error("ERCOT CSV is empty or missing data rows.");
+  }
 
   const headers = parseCsvLine(lines[0]!).map((h) => h.toLowerCase());
   const inrIdx = headers.findIndex((h) => h.includes("inr") || h.includes("project id"));
@@ -99,6 +101,10 @@ export function parseErcotCsv(csvContent: string): ObservationCandidate[] {
         resolutionMethod: "deterministic",
       }
     );
+  }
+
+  if (observations.length === 0) {
+    throw new Error("ERCOT CSV contains zero valid data rows (empty queue payload).");
   }
 
   return observations;

@@ -23,17 +23,17 @@ export function parseTdlrHtml(html: string): ObservationCandidate[] {
 
   const costRaw =
     $("#ctl00_ContentPlaceHolder1_lblEstimatedCost").text().trim() ||
-    $("td:contains('Estimated Cost:')").next("td").text().trim() ||
-    "0";
+    $("td:contains('Estimated Cost:')").next("td").text().trim();
+  const costClean = costRaw ? costRaw.replace(/[^0-9.]/g, "") : "";
   const estimatedCostUsd =
-    parseFloat(costRaw.replace(/[^0-9.]/g, "")) || 0;
+    costClean.length > 0 ? parseFloat(costClean) : (undefined as any);
 
   const sqftRaw =
     $("#ctl00_ContentPlaceHolder1_lblSquareFootage").text().trim() ||
-    $("td:contains('Square Footage:')").next("td").text().trim() ||
-    "0";
+    $("td:contains('Square Footage:')").next("td").text().trim();
+  const sqftClean = sqftRaw ? sqftRaw.replace(/[^0-9.]/g, "") : "";
   const squareFootage =
-    parseFloat(sqftRaw.replace(/[^0-9.]/g, "")) || undefined;
+    sqftClean.length > 0 ? parseFloat(sqftClean) : undefined;
 
   const address =
     $("#ctl00_ContentPlaceHolder1_lblAddress").text().trim() ||

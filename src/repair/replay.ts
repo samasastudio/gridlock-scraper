@@ -5,6 +5,9 @@ import { ScraperRepository } from "../storage/db.js";
 export interface ReplayFixture {
   id: string;
   content: string | Buffer;
+  expectedMinCount?: number;
+  expectedSubjectIds?: string[];
+  expectedAssertion?: (observations: ObservationCandidate[]) => boolean;
 }
 
 export interface ReplayEvaluationResult {
@@ -33,9 +36,23 @@ export async function evaluateCandidatePatch(
         ? fixture.content.toString("utf8")
         : fixture.content;
       const obs = candidateParser(contentStr);
-      if (obs && obs.length > 0) {
-        passed++;
+      if (!obs || obs.length === 0) {
+        continue;
       }
+      if (fixture.expectedMinCount !== undefined && obs.length < fixture.expectedMinCount) {
+        continue;
+      }
+      if (fixture.expectedSubjectIds && fixture.expectedSubjectIds.length > 0) {
+        const extractedIds = new Set(obs.map((o) => o.subjectId));
+        const allPresent = fixture.expectedSubjectIds.every((id) => extractedIds.has(id));
+        if (!allPresent) {
+          continue;
+        }
+      }
+      if (fixture.expectedAssertion && !fixture.expectedAssertion(obs)) {
+        continue;
+      }
+      passed++;
     } catch {
       // Invariant assertion failure or syntax breakdown on fixture
     }

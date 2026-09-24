@@ -75,16 +75,48 @@ export async function runScraperPipeline(
   const existingArtifact = await repo.findSourceArtifactByHash(sha256Hash);
   if (existingArtifact) {
     if (existingArtifact.connectorVersion === "quarantine") {
-      // Known failing/quarantined payload awaiting out-of-band repair (ADR-0004)
-      return {
-        connectorId: options.connectorId,
-        sourceFamily: options.sourceFamily,
-        earlyExit: true,
-        sha256Hash,
-        observationsCount: 0,
-        sourceArtifactId: existingArtifact.id,
-        anomaly: true,
-      };
+      // Known previously quarantined payload. Attempt re-processing with current parser (ADR-0004)
+      try {
+        const candidates = options.parser(contentStr);
+        const observations = candidates.map((cand) => ({
+          subjectType: cand.subjectType,
+          subjectId: cand.subjectId,
+          property: cand.property,
+          valueJson: cand.valueJson,
+          effectiveAt: cand.effectiveAt ?? null,
+          sourceArtifactId: existingArtifact.id,
+          connectorVersion: rawResult.connectorVersion,
+          confidence: cand.confidence ?? 1.0,
+          resolutionMethod: cand.resolutionMethod ?? "deterministic",
+        }));
+
+        await repo.commitReprocessedQuarantine({
+          artifactId: existingArtifact.id,
+          connectorVersion: rawResult.connectorVersion,
+          observations,
+          connectorId: options.connectorId,
+        });
+
+        return {
+          connectorId: options.connectorId,
+          sourceFamily: options.sourceFamily,
+          earlyExit: false,
+          sha256Hash,
+          observationsCount: observations.length,
+          sourceArtifactId: existingArtifact.id,
+        };
+      } catch {
+        // Still failing validation with current parser; remain in quarantine
+        return {
+          connectorId: options.connectorId,
+          sourceFamily: options.sourceFamily,
+          earlyExit: true,
+          sha256Hash,
+          observationsCount: 0,
+          sourceArtifactId: existingArtifact.id,
+          anomaly: true,
+        };
+      }
     }
 
     await repo.updateConnectorStatus(options.connectorId, "ok");
@@ -124,41 +156,42 @@ export async function runScraperPipeline(
     };
   }
 
-  // 3. Persist new raw artifact with dynamic extension
+  // 3 & 4. Persist raw artifact and observations atomically inside a transaction
   const extension = getExtensionForContentType(rawResult.contentType);
   const stored = store.store(options.sourceFamily, rawResult.content, extension);
-  const sourceArtifactId = await repo.insertSourceArtifact({
-    sha256Hash,
-    sourceFamily: options.sourceFamily,
-    sourceUrl: rawResult.sourceUrl,
-    contentType: rawResult.contentType,
-    byteSize: stored.byteSize,
-    storagePath: stored.storagePath,
-    connectorVersion: rawResult.connectorVersion,
-  });
 
-  // 4. Transform into atomic observations linked to source artifact
-  const observations = candidates.map((cand) => ({
-    subjectType: cand.subjectType,
-    subjectId: cand.subjectId,
-    property: cand.property,
-    valueJson: cand.valueJson,
-    effectiveAt: cand.effectiveAt ?? null,
-    sourceArtifactId,
-    connectorVersion: rawResult.connectorVersion,
-    confidence: cand.confidence ?? 1.0,
-    resolutionMethod: cand.resolutionMethod ?? "deterministic",
-  }));
-
-  await repo.insertObservations(observations);
-  await repo.updateConnectorStatus(options.connectorId, "ok");
+  const { artifactId: sourceArtifactId, observationsCount } =
+    await repo.commitNewArtifactWithObservations({
+      artifact: {
+        sha256Hash,
+        sourceFamily: options.sourceFamily,
+        sourceUrl: rawResult.sourceUrl,
+        contentType: rawResult.contentType,
+        byteSize: stored.byteSize,
+        storagePath: stored.storagePath,
+        connectorVersion: rawResult.connectorVersion,
+      },
+      observations: (sourceArtifactId) =>
+        candidates.map((cand) => ({
+          subjectType: cand.subjectType,
+          subjectId: cand.subjectId,
+          property: cand.property,
+          valueJson: cand.valueJson,
+          effectiveAt: cand.effectiveAt ?? null,
+          sourceArtifactId,
+          connectorVersion: rawResult.connectorVersion,
+          confidence: cand.confidence ?? 1.0,
+          resolutionMethod: cand.resolutionMethod ?? "deterministic",
+        })),
+      connectorId: options.connectorId,
+    });
 
   return {
     connectorId: options.connectorId,
     sourceFamily: options.sourceFamily,
     earlyExit: false,
     sha256Hash,
-    observationsCount: observations.length,
+    observationsCount,
     sourceArtifactId,
   };
 }

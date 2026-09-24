@@ -26,6 +26,13 @@
 7. **Texas Infrastructure Scope**: Ingestion spans ERCOT, TDLR, TCEQ, and Texas statewide bodies; never restrict scope to Austin municipal limits.
 8. **Typed ORM Only**: Untyped raw SQL strings are prohibited; use typed Drizzle schema (`src/schema.ts`).
 9. **Windows PowerShell Invariant**: Never use `&&` to chain commands in PowerShell (causes fatal `ParserError`). Separate sequential commands with `;` or execute them in separate tool invocations.
+10. **The Legible Diagram Invariant**: Never cram end-to-end architectures into a single monolithic, multi-subgraph Mermaid chart (causes container auto-scaling and unreadable text). When generating architectural diagrams for review:
+    - Deconstruct into modular sub-flows (Macro Flow, Core Execution/Gate, Failure/Repair Loop).
+    - Enforce explicit readable font size variables in Mermaid blocks (`%%{init: {'theme': 'neutral', 'themeVariables': { 'fontSize': '15px' }}}%%`).
+    - When preparing documentation for formal review, deliver as a dedicated markdown review artifact rather than a single compressed chat message.
+11. **Zero Synthetic Defaults**: Never use fallbacks (`|| 0`, `|| "Austin"`, `|| "under_review"`, `|| "zoning"`) to satisfy schema contracts. Missing or unmapped fields must fail Zod invariants and trigger quarantine.
+12. **Transactional Provenance**: `source_artifacts` insertion, observation emission, and connector status updates must execute atomically inside a typed Drizzle transaction (`this.drizzle.transaction`).
+13. **Mandatory Replay Oracles**: Historical replay fixtures must specify semantic assertions (`expectedMinCount`, `expectedSubjectIds`); promoting patches based on loose `obs.length > 0` checks is strictly prohibited.
 
 ---
 

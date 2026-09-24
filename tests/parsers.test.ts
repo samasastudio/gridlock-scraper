@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { parseCsvLine, parseErcotCsv } from "../../src/parsers/ercot.js";
-import { parseMunicipalAgenda } from "../../src/parsers/municipal.js";
-import { parseTceqHtml } from "../../src/parsers/tceq.js";
-import { parseTdlrHtml } from "../../src/parsers/tdlr.js";
-import { validateTdlrInvariants } from "../../src/schemas/tdlr.js";
+import { parseCsvLine, parseErcotCsv } from "../src/parsers/ercot.js";
+import { parseMunicipalAgenda } from "../src/parsers/municipal.js";
+import { parseTceqHtml } from "../src/parsers/tceq.js";
+import { parseTdlrHtml } from "../src/parsers/tdlr.js";
+import { validateTdlrInvariants } from "../src/schemas/tdlr.js";
 
-const FIXTURES_DIR = join(import.meta.dirname, "..", "fixtures");
+const FIXTURES_DIR = join(import.meta.dirname, "fixtures");
 
 test("TDLR pure parser extracts project and location observations from fixture", () => {
   const html = readFileSync(

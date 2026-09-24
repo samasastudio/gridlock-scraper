@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
-import * as schema from "../../src/schema.js";
+import * as schema from "../src/schema.js";
 
 test("SQLite initialization and schema verification for gridlock-scraper", () => {
   const db = new DatabaseSync(":memory:");

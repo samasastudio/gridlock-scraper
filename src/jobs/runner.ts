@@ -34,7 +34,7 @@ function getExtensionForContentType(contentType: string): string {
 }
 
 /**
- * Core pipeline runner implementing the Content-Hash Early-Exit and Invariant Gates (ADR-0003).
+ * Core pipeline runner implementing the Content-Hash Early-Exit and Invariant Gates (ADR-0003, ADR-0004).
  */
 export async function runScraperPipeline(
   options: PipelineRunOptions
@@ -74,6 +74,19 @@ export async function runScraperPipeline(
   // 1. Content-Hash Early-Exit Check (ADR-0003)
   const existingArtifact = await repo.findSourceArtifactByHash(sha256Hash);
   if (existingArtifact) {
+    if (existingArtifact.connectorVersion === "quarantine") {
+      // Known failing/quarantined payload awaiting out-of-band repair (ADR-0004)
+      return {
+        connectorId: options.connectorId,
+        sourceFamily: options.sourceFamily,
+        earlyExit: true,
+        sha256Hash,
+        observationsCount: 0,
+        sourceArtifactId: existingArtifact.id,
+        anomaly: true,
+      };
+    }
+
     await repo.updateConnectorStatus(options.connectorId, "ok");
     return {
       connectorId: options.connectorId,
@@ -85,25 +98,13 @@ export async function runScraperPipeline(
     };
   }
 
-  // 2. Persist new raw artifact with dynamic extension
-  const extension = getExtensionForContentType(rawResult.contentType);
-  const stored = store.store(options.sourceFamily, rawResult.content, extension);
-  const sourceArtifactId = await repo.insertSourceArtifact({
-    sha256Hash,
-    sourceFamily: options.sourceFamily,
-    sourceUrl: rawResult.sourceUrl,
-    contentType: rawResult.contentType,
-    byteSize: stored.byteSize,
-    storagePath: stored.storagePath,
-    connectorVersion: rawResult.connectorVersion,
-  });
-
-  // 3. Pure Parser & Invariant Validation
+  // 2. Pure Parser & Invariant Validation (ADR-0002, Step 4)
+  // Validate pure invariants before database writes to prevent corrupted partial artifacts.
   let candidates: ObservationCandidate[];
   try {
     candidates = options.parser(contentStr);
   } catch (err: any) {
-    await quarantineExtractionFailure({
+    const { artifactId } = await quarantineExtractionFailure({
       connectorId: options.connectorId,
       sourceFamily: options.sourceFamily,
       sourceUrl: rawResult.sourceUrl,
@@ -118,10 +119,23 @@ export async function runScraperPipeline(
       earlyExit: false,
       sha256Hash,
       observationsCount: 0,
-      sourceArtifactId,
+      sourceArtifactId: artifactId,
       anomaly: true,
     };
   }
+
+  // 3. Persist new raw artifact with dynamic extension
+  const extension = getExtensionForContentType(rawResult.contentType);
+  const stored = store.store(options.sourceFamily, rawResult.content, extension);
+  const sourceArtifactId = await repo.insertSourceArtifact({
+    sha256Hash,
+    sourceFamily: options.sourceFamily,
+    sourceUrl: rawResult.sourceUrl,
+    contentType: rawResult.contentType,
+    byteSize: stored.byteSize,
+    storagePath: stored.storagePath,
+    connectorVersion: rawResult.connectorVersion,
+  });
 
   // 4. Transform into atomic observations linked to source artifact
   const observations = candidates.map((cand) => ({

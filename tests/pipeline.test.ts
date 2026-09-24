@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import test from "node:test";
-import { runScraperPipeline } from "../../src/jobs/runner.js";
-import { parseTdlrHtml } from "../../src/parsers/tdlr.js";
-import { evaluateCandidatePatch } from "../../src/repair/replay.js";
-import { ArtifactStore } from "../../src/storage/artifact-store.js";
-import { createDatabase } from "../../src/storage/db.js";
+import { runScraperPipeline } from "../src/jobs/runner.js";
+import { parseTdlrHtml } from "../src/parsers/tdlr.js";
+import { evaluateCandidatePatch } from "../src/repair/replay.js";
+import { ArtifactStore } from "../src/storage/artifact-store.js";
+import { createDatabase } from "../src/storage/db.js";
 
 const SAMPLE_TDLR_HTML = `
 <html><body>

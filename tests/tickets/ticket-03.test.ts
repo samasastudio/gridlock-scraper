@@ -13,23 +13,37 @@ const FIXTURE_PATH = path.resolve(
   "tests/fixtures/tdlr/tabs-sample.html"
 );
 
-test("Ticket 03 - Criteria 1: Extracts project number, estimated cost, square footage, address, county", () => {
+test("Ticket 03 - Criteria 1: Extracts project number, estimated cost, square footage, address, county, owner, and architect", () => {
   const html = fs.readFileSync(FIXTURE_PATH, "utf8");
   const observations = parseTdlrHtml(html);
 
-  assert.ok(observations.length >= 3, "Must produce multiple atomic observations");
+  assert.ok(observations.length >= 6, "Must produce multiple atomic observations including owner and architect");
 
   const costObs = observations.find((o) => o.property === "estimated_cost");
   assert.ok(costObs, "Must extract estimated_cost property");
+  assert.equal(costObs?.subjectId, "TABS2024098765", "Must extract project number as subjectId");
   assert.equal((costObs?.valueJson as any).usd, 450000000);
 
   const nameObs = observations.find((o) => o.property === "name");
   assert.ok(nameObs, "Must extract name property");
   assert.equal((nameObs?.valueJson as any).name, "Project Red River Hyperscale Data Center Phase 1");
 
+  const sqftObs = observations.find((o) => o.property === "square_footage");
+  assert.ok(sqftObs, "Must extract square_footage property");
+  assert.equal((sqftObs?.valueJson as any).sqft, 385000);
+
   const locObs = observations.find((o) => o.subjectType === "location");
   assert.ok(locObs, "Must extract location observation");
+  assert.equal((locObs?.valueJson as any).address, "12000 Tech Ridge Blvd");
   assert.equal((locObs?.valueJson as any).county, "Travis");
+
+  const ownerObs = observations.find((o) => o.property === "owner");
+  assert.ok(ownerObs, "Must extract owner property");
+  assert.equal((ownerObs?.valueJson as any).owner, "Red River Hyperscale LLC");
+
+  const archObs = observations.find((o) => o.property === "architect");
+  assert.ok(archObs, "Must extract architect property");
+  assert.equal((archObs?.valueJson as any).architect, "Corgan Associates Inc");
 });
 
 test("Ticket 03 - Criteria 2: Validates extracted records against Zod TdlrProjectSchema", () => {

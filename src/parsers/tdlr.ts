@@ -50,6 +50,20 @@ export function parseTdlrHtml(html: string): ObservationCandidate[] {
     $("td:contains('County:')").next("td").text().trim() ||
     "";
 
+  const owner =
+    $("#ctl00_ContentPlaceHolder1_lblOwner").text().trim() ||
+    $("#ctl00_ContentPlaceHolder1_lblOwnerName").text().trim() ||
+    $("td:contains('Owner:')").next("td").text().trim() ||
+    $("td:contains('Owner Name:')").next("td").text().trim() ||
+    undefined;
+
+  const designFirm =
+    $("#ctl00_ContentPlaceHolder1_lblDesignFirm").text().trim() ||
+    $("#ctl00_ContentPlaceHolder1_lblArchitect").text().trim() ||
+    $("td:contains('Design Firm:')").next("td").text().trim() ||
+    $("td:contains('Architect:')").next("td").text().trim() ||
+    undefined;
+
   const rawProject = {
     projectNumber,
     projectName,
@@ -60,6 +74,8 @@ export function parseTdlrHtml(html: string): ObservationCandidate[] {
     city,
     county,
     state: "TX",
+    owner,
+    designFirm,
   };
 
   // Enforce Zod invariants
@@ -103,6 +119,28 @@ export function parseTdlrHtml(html: string): ObservationCandidate[] {
       subjectId: validated.projectNumber,
       property: "square_footage",
       valueJson: { sqft: validated.squareFootage },
+      confidence: 1.0,
+      resolutionMethod: "deterministic",
+    });
+  }
+
+  if (validated.owner) {
+    observations.push({
+      subjectType: "project",
+      subjectId: validated.projectNumber,
+      property: "owner",
+      valueJson: { owner: validated.owner },
+      confidence: 1.0,
+      resolutionMethod: "deterministic",
+    });
+  }
+
+  if (validated.designFirm) {
+    observations.push({
+      subjectType: "project",
+      subjectId: validated.projectNumber,
+      property: "architect",
+      valueJson: { architect: validated.designFirm },
       confidence: 1.0,
       resolutionMethod: "deterministic",
     });

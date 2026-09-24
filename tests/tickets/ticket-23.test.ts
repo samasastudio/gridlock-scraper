@@ -59,11 +59,11 @@ test("Ticket 23 - Criteria 2 & 3: Extractor captures downloaded binary buffer an
     `Expected spreadsheet or CSV MIME type, got ${result.contentType}`
   );
 
-  const isBuffer = Buffer.isBuffer(result.content);
-  assert.ok(isBuffer || typeof result.content === "string");
-  if (isBuffer) {
-    assert.deepEqual(result.content, mockPayload);
-  }
+  assert.ok(
+    Buffer.isBuffer(result.content),
+    "result.content must be a binary Buffer containing downloaded payload"
+  );
+  assert.deepEqual(result.content, mockPayload);
 });
 
 test("Ticket 23 - Criteria 4: Timeout or missing download raises anomaly or falls back gracefully", async () => {

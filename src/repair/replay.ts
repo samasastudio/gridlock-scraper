@@ -21,6 +21,76 @@ export interface ReplayEvaluationResult {
   auditId: string;
 }
 
+export interface SingleFixtureEvaluation {
+  fixtureId: string;
+  passed: boolean;
+  failureReason?: string;
+}
+
+function hasSemanticOracle(fixture: ReplayFixture): boolean {
+  return (
+    (typeof fixture.expectedMinCount === "number" && fixture.expectedMinCount >= 0) ||
+    (Array.isArray(fixture.expectedSubjectIds) && fixture.expectedSubjectIds.length > 0) ||
+    typeof fixture.expectedAssertion === "function"
+  );
+}
+
+/**
+ * Pure evaluation of a candidate parser against a single historical fixture.
+ * Emits explicit diagnostic failure reasons for rapid root-cause isolation.
+ */
+function evaluateSingleFixture(
+  fixture: ReplayFixture,
+  candidateParser: (content: string) => ObservationCandidate[]
+): SingleFixtureEvaluation {
+  try {
+    const contentStr = Buffer.isBuffer(fixture.content)
+      ? fixture.content.toString("utf8")
+      : fixture.content;
+    const obs = candidateParser(contentStr);
+
+    if (!obs || obs.length === 0) {
+      return {
+        fixtureId: fixture.id,
+        passed: false,
+        failureReason: "Empty observations produced",
+      };
+    }
+    if (fixture.expectedMinCount !== undefined && obs.length < fixture.expectedMinCount) {
+      return {
+        fixtureId: fixture.id,
+        passed: false,
+        failureReason: `Observation count ${obs.length} < expected min ${fixture.expectedMinCount}`,
+      };
+    }
+    if (fixture.expectedSubjectIds && fixture.expectedSubjectIds.length > 0) {
+      const extractedIds = new Set(obs.map((o) => o.subjectId));
+      const missing = fixture.expectedSubjectIds.filter((id) => !extractedIds.has(id));
+      if (missing.length > 0) {
+        return {
+          fixtureId: fixture.id,
+          passed: false,
+          failureReason: `Missing required subject IDs: ${missing.join(", ")}`,
+        };
+      }
+    }
+    if (fixture.expectedAssertion && !fixture.expectedAssertion(obs)) {
+      return {
+        fixtureId: fixture.id,
+        passed: false,
+        failureReason: "Semantic expectedAssertion predicate returned false",
+      };
+    }
+    return { fixtureId: fixture.id, passed: true };
+  } catch (err: any) {
+    return {
+      fixtureId: fixture.id,
+      passed: false,
+      failureReason: `Parser threw error: ${err.message}`,
+    };
+  }
+}
+
 /**
  * Historical replay test harness verifying candidate selector patches
  * against frozen fixtures before promotion (ADR-0004).
@@ -33,49 +103,15 @@ export async function evaluateCandidatePatch(
   db: DatabaseSync,
   options?: { quarantinedArtifactId?: string }
 ): Promise<ReplayEvaluationResult> {
-  for (const fixture of fixtures) {
-    const hasOracle =
-      (typeof fixture.expectedMinCount === "number" && fixture.expectedMinCount >= 0) ||
-      (Array.isArray(fixture.expectedSubjectIds) && fixture.expectedSubjectIds.length > 0) ||
-      typeof fixture.expectedAssertion === "function";
-
-    if (!hasOracle) {
-      throw new Error(
-        `ReplayFixture '${fixture.id}' must provide at least one semantic oracle (expectedMinCount, expectedSubjectIds, or expectedAssertion).`
-      );
-    }
+  const invalidFixture = fixtures.find((f) => !hasSemanticOracle(f));
+  if (invalidFixture) {
+    throw new Error(
+      `ReplayFixture '${invalidFixture.id}' must provide at least one semantic oracle (expectedMinCount, expectedSubjectIds, or expectedAssertion).`
+    );
   }
 
-  let passed = 0;
-
-  for (const fixture of fixtures) {
-    try {
-      const contentStr = Buffer.isBuffer(fixture.content)
-        ? fixture.content.toString("utf8")
-        : fixture.content;
-      const obs = candidateParser(contentStr);
-      if (!obs || obs.length === 0) {
-        continue;
-      }
-      if (fixture.expectedMinCount !== undefined && obs.length < fixture.expectedMinCount) {
-        continue;
-      }
-      if (fixture.expectedSubjectIds && fixture.expectedSubjectIds.length > 0) {
-        const extractedIds = new Set(obs.map((o) => o.subjectId));
-        const allPresent = fixture.expectedSubjectIds.every((id) => extractedIds.has(id));
-        if (!allPresent) {
-          continue;
-        }
-      }
-      if (fixture.expectedAssertion && !fixture.expectedAssertion(obs)) {
-        continue;
-      }
-      passed++;
-    } catch {
-      // Invariant assertion failure or syntax breakdown on fixture
-    }
-  }
-
+  const evaluations = fixtures.map((f) => evaluateSingleFixture(f, candidateParser));
+  const passed = evaluations.filter((e) => e.passed).length;
   const allPassed = fixtures.length > 0 && passed === fixtures.length;
   const repo = new ScraperRepository(db);
 
@@ -83,6 +119,7 @@ export async function evaluateCandidatePatch(
     passed,
     total: fixtures.length,
     allPassed,
+    details: evaluations,
     ...(options?.quarantinedArtifactId ? { quarantinedArtifactId: options.quarantinedArtifactId } : {}),
   };
 

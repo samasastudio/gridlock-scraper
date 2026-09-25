@@ -119,23 +119,16 @@ export async function syncArtifactBlobsToR2(
     return { syncedCount: 0 };
   }
 
-  function getFilesRecursively(dir: string): string[] {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    const files: string[] = [];
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        files.push(...getFilesRecursively(fullPath));
-      } else if (entry.isFile()) {
-        files.push(fullPath);
-      }
-    }
-    return files;
-  }
+  // Node 22 native recursive directory traversal
+  const files = fs
+    .readdirSync(artifactsDir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(entry.parentPath ?? artifactsDir, entry.name));
 
-  const files = getFilesRecursively(artifactsDir);
   let syncedCount = 0;
 
+  // NOTE (Architecture Rationale): Sequential iteration ensures R2 PUT requests
+  // are rate-managed and memory overhead is bounded to single file buffers.
   for (const filePath of files) {
     const fileBuffer = fs.readFileSync(filePath);
     const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
@@ -184,11 +177,10 @@ export function signS3Request(
     host: url.host,
     "x-amz-content-sha256": payloadHash,
     "x-amz-date": datetime,
+    ...Object.fromEntries(
+      Object.entries(extraHeaders).map(([k, v]) => [k.toLowerCase(), v])
+    ),
   };
-
-  for (const [k, v] of Object.entries(extraHeaders)) {
-    headers[k.toLowerCase()] = v;
-  }
 
   const sortedKeys = Object.keys(headers).sort();
   const signedHeaders = sortedKeys.join(";");

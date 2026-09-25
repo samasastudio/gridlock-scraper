@@ -1,4 +1,5 @@
 import path from "node:path";
+import { parseArgs as nodeParseArgs } from "node:util";
 import { extractAustinPermits } from "./extractors/austin.js";
 import { extractErcotQueue } from "./extractors/ercot.js";
 import { extractMunicipalAgendas } from "./extractors/municipal.js";
@@ -96,24 +97,28 @@ export const CONNECTOR_JOBS: Record<
 };
 
 /**
- * Parses command line arguments for the scraper CLI entrypoint.
+ * Parses command line arguments for the scraper CLI entrypoint using Node.js util.parseArgs.
  */
 export function parseArgs(rawArgs: string[]): CliOptions {
-  let source: string = "all";
-  let dryRun = false;
-  let force = false;
-
-  for (const arg of rawArgs) {
-    if (arg.startsWith("--source=")) {
-      source = arg.slice("--source=".length).trim();
-    } else if (arg === "--dry-run") {
-      dryRun = true;
-    } else if (arg === "--force") {
-      force = true;
-    } else if (arg.startsWith("-")) {
-      throw new Error(`Unknown option: ${arg}`);
-    }
+  let parsed: any;
+  try {
+    parsed = nodeParseArgs({
+      args: rawArgs,
+      options: {
+        source: { type: "string", default: "all" },
+        "dry-run": { type: "boolean", default: false },
+        force: { type: "boolean", default: false },
+      },
+      strict: true,
+      allowPositionals: false,
+    });
+  } catch (err: any) {
+    throw new Error(`Unknown option or invalid syntax: ${err.message}`);
   }
+
+  const source = parsed.values.source ?? "all";
+  const dryRun = Boolean(parsed.values["dry-run"]);
+  const force = Boolean(parsed.values.force);
 
   if (!VALID_SOURCES.includes(source as any)) {
     throw new Error(
@@ -188,6 +193,9 @@ export async function main(
     ensureConnectorConfigs(db);
     const jobs = resolveJobsToRun(options.source);
 
+    // NOTE (Architecture Rationale): Sequential iteration is mandatory here
+    // to respect single-threaded SQLite write transaction locks and avoid
+    // tripping anti-bot rate-limiting across external Texas state agency portals.
     for (const job of jobs) {
       console.log(`[CLI] Running connector: ${job.name} (${job.connectorId})...`);
       const result = await runScraperPipeline({

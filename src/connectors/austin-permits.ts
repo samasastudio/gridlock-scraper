@@ -35,6 +35,9 @@ export function buildSocrataUrl(params: SocrataUrlParams = {}): string {
 
 /**
  * Executes a network fetch function with exponential backoff and jitter on HTTP 429 (ADR-0001).
+ * NOTE (Architecture Rationale): A sequential imperative loop with setTimeout delay is
+ * intentionally chosen over async recursion to enforce strict linear time budgeting and
+ * avoid accumulating unresolved Promise stack frames during sustained rate limiting.
  */
 export async function fetchWithBackoff<T>(
   fetchFn: () => Promise<T>,
@@ -44,8 +47,7 @@ export async function fetchWithBackoff<T>(
   const baseDelayMs = options.baseDelayMs ?? 100;
   const maxDelayMs = options.maxDelayMs ?? 5000;
 
-  let attempt = 0;
-  while (true) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const result = await fetchFn();
       if (
@@ -60,19 +62,21 @@ export async function fetchWithBackoff<T>(
       }
       return result;
     } catch (err: any) {
-      attempt++;
       const is429 =
         err?.status === 429 ||
         err?.statusCode === 429 ||
         /429|rate limit/i.test(err?.message ?? "");
 
-      if (attempt >= maxRetries || !is429) {
+      const isLastAttempt = attempt >= maxRetries - 1;
+      if (isLastAttempt || !is429) {
         throw err;
       }
 
       const jitter = Math.random() * 10;
-      const delay = Math.min(baseDelayMs * 2 ** (attempt - 1) + jitter, maxDelayMs);
+      const delay = Math.min(baseDelayMs * 2 ** attempt + jitter, maxDelayMs);
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
+
+  throw new Error(`fetchWithBackoff exhausted all ${maxRetries} retry attempts.`);
 }

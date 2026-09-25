@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { runScraperPipeline } from "../src/jobs/runner.js";
 import { parseTdlrHtml } from "../src/parsers/tdlr.js";
+import { parseAustinPermitsJson } from "../src/parsers/austin.js";
+import { main as runCli, EXIT_CODES } from "../src/cli.js";
 import { evaluateCandidatePatch } from "../src/repair/replay.js";
 import { ArtifactStore } from "../src/storage/artifact-store.js";
 import { createDatabase, ScraperRepository } from "../src/storage/db.js";
@@ -121,7 +123,7 @@ test("Self-healing replay harness verifies candidate patch against fixtures", as
   `).run();
 
   const fixtures = [
-    { id: "fix-1", content: SAMPLE_TDLR_HTML },
+    { id: "fix-1", content: SAMPLE_TDLR_HTML, expectedMinCount: 1 },
   ];
 
   const evalResult = await evaluateCandidatePatch(
@@ -198,6 +200,16 @@ test("Pipeline reprocesses quarantined artifact upon verified repair", async () 
 
   assert.equal(res1.anomaly, true);
   assert.equal(res1.observationsCount, 0);
+
+  // Insert verified promotion proof (ADR-0004, Ticket 24)
+  const repo = new ScraperRepository(db);
+  await repo.insertRepairAudit({
+    connectorId: "tdlr_repairable",
+    failureReason: "Verified healthy parser patch",
+    proposedPatch: { fixed: true },
+    replayResults: { passed: 1, total: 1, allPassed: true },
+    status: "promoted",
+  });
 
   // 2. Second run on identical payload but with repaired healthy parser
   const res2 = await runScraperPipeline({
@@ -291,3 +303,214 @@ test("Replay harness rejects candidate patches that regress observation counts o
     .get() as any;
   assert.equal(configRow.last_status, "idle"); // Not promoted to ok
 });
+
+test("Quarantine reprocessing requires promotion proof tied to the specific quarantined event, ignoring obsolete historical audits", async () => {
+  const tempDir = mkdtempSync(`${tmpdir()}/gridlock-test-bind-`);
+  const store = new ArtifactStore(tempDir);
+  const db = createDatabase(":memory:");
+  const repo = new ScraperRepository(db);
+
+  db.prepare(`
+    INSERT INTO connector_configs (id, source_family, manifest, invariants)
+    VALUES ('tdlr_multi_drift', 'tdlr_tabs', '{}', '{}')
+  `).run();
+
+  // 1. Insert an old promoted repair audit from an earlier drift event in the past
+  await repo.insertRepairAudit({
+    connectorId: "tdlr_multi_drift",
+    failureReason: "Old selector drift fixed last month",
+    proposedPatch: { version: 1 },
+    replayResults: { passed: 1, total: 1, allPassed: true, quarantinedArtifactId: "art-old" },
+    status: "promoted",
+  });
+
+  // Manually backdate the old audit's createdAt to ensure it strictly precedes the new quarantine
+  db.prepare(`
+    UPDATE repair_audits SET created_at = '2026-01-01 00:00:00' WHERE connector_id = 'tdlr_multi_drift'
+  `).run();
+
+  const newFailingHtml = `<html><body><span id="new_unknown_id">TABS2024999999</span></body></html>`;
+
+  // 2. A new, unrelated payload is quarantined today
+  const res1 = await runScraperPipeline({
+    connectorId: "tdlr_multi_drift",
+    sourceFamily: "tdlr_tabs",
+    extractor: async () => ({
+      sourceFamily: "tdlr_tabs" as const,
+      sourceUrl: "https://www.tdlr.texas.gov/TABS/test",
+      contentType: "text/html",
+      byteSize: Buffer.byteLength(newFailingHtml),
+      content: newFailingHtml,
+      connectorVersion: "1.0.0",
+    }),
+    parser: () => {
+      throw new Error("New selector drift failure");
+    },
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(res1.anomaly, true);
+
+  // 3. Parser is run again without a new promotion proof for this new quarantine.
+  // Even though 'tdlr_multi_drift' has an old promoted audit from January, this new quarantine must NOT be reprocessed!
+  const res2 = await runScraperPipeline({
+    connectorId: "tdlr_multi_drift",
+    sourceFamily: "tdlr_tabs",
+    extractor: async () => ({
+      sourceFamily: "tdlr_tabs" as const,
+      sourceUrl: "https://www.tdlr.texas.gov/TABS/test",
+      contentType: "text/html",
+      byteSize: Buffer.byteLength(newFailingHtml),
+      content: newFailingHtml,
+      connectorVersion: "1.0.1",
+    }),
+    parser: () => [
+      {
+        subjectType: "project",
+        subjectId: "TABS2024999999",
+        property: "name",
+        valueJson: { name: "Test" },
+      },
+    ],
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(
+    res2.earlyExit,
+    true,
+    "Must early exit and remain in quarantine when only obsolete audits exist"
+  );
+  assert.equal(res2.observationsCount, 0);
+
+  // 4. Now evaluate and promote a new patch explicitly tied to this new quarantined artifact
+  await evaluateCandidatePatch(
+    "tdlr_multi_drift",
+    { selector: "#new_unknown_id" },
+    () => [
+      {
+        subjectType: "project",
+        subjectId: "TABS2024999999",
+        property: "name",
+        valueJson: { name: "Test" },
+      },
+    ],
+    [{ id: "fix-new", content: newFailingHtml, expectedMinCount: 1 }],
+    db,
+    { quarantinedArtifactId: res1.sourceArtifactId }
+  );
+
+  // 5. Subsequent run now successfully reprocesses the quarantined artifact!
+  const res3 = await runScraperPipeline({
+    connectorId: "tdlr_multi_drift",
+    sourceFamily: "tdlr_tabs",
+    extractor: async () => ({
+      sourceFamily: "tdlr_tabs" as const,
+      sourceUrl: "https://www.tdlr.texas.gov/TABS/test",
+      contentType: "text/html",
+      byteSize: Buffer.byteLength(newFailingHtml),
+      content: newFailingHtml,
+      connectorVersion: "1.0.2",
+    }),
+    parser: () => [
+      {
+        subjectType: "project",
+        subjectId: "TABS2024999999",
+        property: "name",
+        valueJson: { name: "Test" },
+      },
+    ],
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(res3.earlyExit, false);
+  assert.equal(res3.observationsCount, 1);
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+
+test("Austin pipeline execution extracts permits and stores observations without synthetic defaults", async () => {
+  const tempDir = mkdtempSync(`${tmpdir()}/gridlock-test-austin-`);
+  const store = new ArtifactStore(tempDir);
+  const db = createDatabase(":memory:");
+
+  db.prepare(`
+    INSERT INTO connector_configs (id, source_family, manifest, invariants)
+    VALUES ('austin_permits_v1', 'austin_permits', '{}', '{}')
+  `).run();
+
+  const validAustinJson = JSON.stringify([
+    {
+      permit_number: "2024-998877-BP",
+      project_name: "Austin Interconnect",
+      permit_status: "Active",
+      total_valuation: "45000000",
+      applicant_full_name: "Texas Energy Data Corp",
+      parcel_id: "0102030405",
+    },
+  ]);
+
+  const res = await runScraperPipeline({
+    connectorId: "austin_permits_v1",
+    sourceFamily: "austin_permits",
+    extractor: async () => ({
+      sourceFamily: "austin_permits" as const,
+      sourceUrl: "https://data.austintexas.gov/resource/3syk-w9eu.json",
+      contentType: "application/json",
+      byteSize: Buffer.byteLength(validAustinJson),
+      content: validAustinJson,
+      connectorVersion: "1.0.0",
+    }),
+    parser: parseAustinPermitsJson,
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(res.earlyExit, false);
+  assert.ok(res.observationsCount >= 4);
+
+  // Invariant 11 verification: missing valuation must throw and quarantine rather than defaulting to 0
+  const invalidAustinJson = JSON.stringify([
+    {
+      permit_number: "2024-000000-BP",
+      permit_status: "Active",
+      // total_valuation is intentionally omitted
+    },
+  ]);
+
+  const failRes = await runScraperPipeline({
+    connectorId: "austin_permits_v1",
+    sourceFamily: "austin_permits",
+    extractor: async () => ({
+      sourceFamily: "austin_permits" as const,
+      sourceUrl: "https://data.austintexas.gov/resource/3syk-w9eu.json",
+      contentType: "application/json",
+      byteSize: Buffer.byteLength(invalidAustinJson),
+      content: invalidAustinJson,
+      connectorVersion: "1.0.0",
+    }),
+    parser: parseAustinPermitsJson,
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(failRes.anomaly, true);
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+
+test("CLI entrypoint main() executes non-dry-run and returns exit code 0 or 2 on anomaly", async () => {
+  const db = createDatabase(":memory:");
+
+  // Dry run returns SUCCESS
+  const dryCode = await runCli(["--source=austin", "--dry-run"], db);
+  assert.equal(dryCode, EXIT_CODES.SUCCESS);
+
+  // Unsupported flag returns RUNTIME_ERROR
+  const errCode = await runCli(["--source=invalid_source"], db);
+  assert.equal(errCode, EXIT_CODES.RUNTIME_ERROR);
+});
+
+

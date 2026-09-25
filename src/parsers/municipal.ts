@@ -12,6 +12,29 @@ export function parseMunicipalAgenda(html: string): ObservationCandidate[] {
 
   const itemContainers = $(".agenda-item");
 
+  function classifyActionType(rawType: string, title: string, fullText: string): string | undefined {
+    const trimmed = rawType.trim().toLowerCase();
+    if (trimmed) {
+      return trimmed;
+    }
+    const combined = `${title} ${fullText}`.toLowerCase();
+    if (/annex/i.test(combined)) return "annexation";
+    if (/site[ -]?plan/i.test(combined)) return "site_plan";
+    if (/building[ -]?permit/i.test(combined)) return "building_permit";
+    if (/variance/i.test(combined)) return "variance";
+    if (/zoning|rezon/i.test(combined)) return "zoning";
+    if (/public hearing|hearing/i.test(combined)) return "hearing";
+    return undefined;
+  }
+
+  function extractStatus(container: cheerio.Cheerio<any>): string | undefined {
+    const statusEl = container.find(".action-status");
+    if (statusEl.length === 0) return undefined;
+    const text = statusEl.text().trim();
+    if (!text) return undefined;
+    return text.toLowerCase();
+  }
+
   if (itemContainers.length > 0) {
     itemContainers.each((_, el) => {
       const container = $(el);
@@ -31,17 +54,15 @@ export function parseMunicipalAgenda(html: string): ObservationCandidate[] {
         container.find("td:contains('Item Title:')").next("td").text().trim() ||
         "";
 
-      const statusRaw =
-        container.find(".action-status").text().trim().toLowerCase() ||
-        "under_review";
-      const status = ["approved", "denied", "withdrawn", "filed"].includes(statusRaw)
-        ? (statusRaw as any)
-        : "under_review";
+      const status = extractStatus(container);
+
+      const rawActionType = container.find(".action-type").text().trim();
+      const actionType = classifyActionType(rawActionType, title, container.text());
 
       const validated = validateMunicipalInvariants({
         actionIdentifier,
         jurisdiction,
-        actionType: "zoning",
+        actionType,
         title,
         status,
       });
@@ -71,17 +92,15 @@ export function parseMunicipalAgenda(html: string): ObservationCandidate[] {
         const actionIdentifier = idEl.text().trim();
         const jurisdiction = parent.find(".jurisdiction").text().trim() || "";
         const title = parent.find(".action-title").text().trim() || "";
-        const statusRaw =
-          parent.find(".action-status").text().trim().toLowerCase() ||
-          "under_review";
-        const status = ["approved", "denied", "withdrawn", "filed"].includes(statusRaw)
-          ? (statusRaw as any)
-          : "under_review";
+        const status = extractStatus(parent);
+
+        const rawActionType = parent.find(".action-type").text().trim();
+        const actionType = classifyActionType(rawActionType, title, parent.text());
 
         const validated = validateMunicipalInvariants({
           actionIdentifier,
           jurisdiction,
-          actionType: "zoning",
+          actionType,
           title,
           status,
         });
@@ -111,16 +130,18 @@ export function parseMunicipalAgenda(html: string): ObservationCandidate[] {
         $(".action-title").text().trim() ||
         $("td:contains('Item Title:')").next("td").text().trim() ||
         "";
-      const statusRaw =
-        $(".action-status").text().trim().toLowerCase() || "under_review";
-      const status = ["approved", "denied", "withdrawn", "filed"].includes(statusRaw)
-        ? (statusRaw as any)
-        : "under_review";
+      const statusEl = $(".action-status");
+      const status = statusEl.length > 0 && statusEl.text().trim()
+        ? statusEl.text().trim().toLowerCase()
+        : undefined;
+
+      const rawActionType = $(".action-type").text().trim();
+      const actionType = classifyActionType(rawActionType, title, $("body").text());
 
       const validated = validateMunicipalInvariants({
         actionIdentifier,
         jurisdiction,
-        actionType: "zoning",
+        actionType,
         title,
         status,
       });

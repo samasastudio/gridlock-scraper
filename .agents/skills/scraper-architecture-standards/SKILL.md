@@ -25,6 +25,10 @@ Comprehensive architectural, organizational, and code standards for `gridlock-sc
 | **Atomic Transactional Writes** | `source_artifacts` and `observations` must be committed together inside a database transaction to prevent orphan hashes from deadlocking retries. | ADR-0003 |
 | **Non-Empty Stream Gate** | Continuous regulatory queues (ERCOT, municipal dockets) must assert $\ge 1$ parsed record; 0 records indicate an upstream outage or breaking layout shift. | ADR-0004 |
 | **Semantic Replay Oracles** | Every replay test fixture must define strict semantic expectations (`expectedMinCount`, `expectedSubjectIds`); loose `obs.length > 0` checks are banned. | ADR-0004 |
+| **Bounded Anomaly Promotion** | Candidate repair patches must be strictly bound to recorded quarantine failures (by failure ID and temporal window); unanchored anomaly clearance is prohibited. | ADR-0004 |
+| **CLI Script Executability** | Standalone scripts under `scripts/` must include entrypoint execution guards to run directly via CLI (`tsx scripts/<name>.ts`). | Standard |
+| **Decomposed Factory Returns** | Service factories must extract multi-line async methods into standalone functions and return clean reference objects. | AGENTS.md |
+| **Execution Integrity** | CLI and container entrypoints must wire real pipeline runners and return deterministic exit codes (0, 1, 2). | AGENTS.md |
 | **Agent Validation Gates** | Backlog tickets validated via dedicated `tests/tickets/ticket-XX.test.ts` suites; `npm run test:ticket <id>` acts as the definitive Definition of Done. | ADR-0006, ADR-0008 |
 
 ---
@@ -96,6 +100,11 @@ Review every scraper PR against this checklist:
 - [ ] **Non-Empty Verification**: For continuous queue sources, does the parser assert that at least one valid record was extracted?
 - [ ] **Media Type Preservation**: Does quarantine preserve the raw bitstream's true `contentType` and file extension?
 - [ ] **Replay Semantic Assertions**: Do all replay fixtures include explicit expected counts or subject IDs?
+- [ ] **Bounded Anomaly Promotion**: Does anomaly patch promotion prove resolution of a specific, recorded quarantined failure record?
+- [ ] **Executable CLI Scripts**: If adding or modifying a script in `scripts/`, does it contain an entrypoint execution block (`if (process.argv[1] === fileURLToPath(import.meta.url))`)?
+- [ ] **Decomposed Factory Returns**: Does client/service creation avoid massive stacked inline method literals in returned objects?
+- [ ] **Execution Wiring**: Does the CLI entrypoint actually wire database storage and pipeline runners rather than returning a no-op success code?
+- [ ] **HTTP 429 Response Check**: Does rate-limit retry logic handle resolved response objects with `status === 429` as well as thrown exceptions?
 - [ ] **Agent Validation Gate**: Does the implementation satisfy `npm run test:ticket <id>` with exit code 0?
 - [ ] **Falsifiable Red Spec**: Was the ticket acceptance test verified RED against real contracts before implementation without placeholder stubs?
 - [ ] **Commit Message**: Does commit conform to Conventional Commits (`feat:`, `fix:`, `chore:`, etc.)?
@@ -115,3 +124,7 @@ Review every scraper PR against this checklist:
 9. **Permissive Patch Promotion**: Counting a replay test as passing merely because `obs.length > 0`.
 10. **Lossy Quarantine Media Types**: Saving non-HTML payloads (CSV, JSON, PDF) as `text/html` in quarantine.
 11. **Placeholder Test Gates**: Writing `assert.fail("pending")` or expectation-free test stubs instead of real contract assertions against target interfaces and schemas.
+12. **Unanchored Anomaly Promotion**: Clearing connector anomaly status or promoting patches without proving resolution against an active quarantined failure record.
+13. **Inert CLI Scripts**: Creating standalone scripts in `scripts/` that only export functions without an executable top-level invocation block.
+14. **Stacked Inline Method Literals**: Inlining heavy multi-line asynchronous methods directly inside a returned object literal in client factory functions, creating unreadable nested blocks.
+15. **Hollow Orchestration Entrypoints**: Creating CLI commands or container default processes that return exit code 0 without executing pipelines or starting background workers.

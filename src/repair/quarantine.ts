@@ -10,6 +10,8 @@ export interface QuarantineParams {
   failureReason: string;
   artifactStore: ArtifactStore;
   db: DatabaseSync;
+  contentType?: string;
+  extension?: string;
 }
 
 /**
@@ -21,17 +23,26 @@ export async function quarantineExtractionFailure(params: QuarantineParams): Pro
   auditId: string;
 }> {
   const repo = new ScraperRepository(params.db);
+  const contentType = params.contentType ?? "text/html";
+  const extension = params.extension ?? (
+    contentType.includes("csv") ? "csv" :
+    contentType.includes("json") ? "json" :
+    contentType.includes("pdf") ? "pdf" :
+    contentType.includes("xml") ? "xml" :
+    "html"
+  );
+
   const stored = params.artifactStore.store(
     `quarantine/${params.sourceFamily}`,
     params.rawPayload,
-    "html"
+    extension
   );
 
   const artifactId = await repo.insertSourceArtifact({
     sha256Hash: stored.sha256Hash,
     sourceFamily: params.sourceFamily,
     sourceUrl: params.sourceUrl,
-    contentType: "text/html",
+    contentType,
     byteSize: stored.byteSize,
     storagePath: stored.storagePath,
     connectorVersion: "quarantine",

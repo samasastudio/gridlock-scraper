@@ -108,7 +108,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "GET /api/source-health/telemetry reports connector uptime and repair audits",
     ],
     testFile: "tests/tickets/ticket-07.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "19",
@@ -123,7 +123,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Image compiles and verifies offline tests cleanly inside container",
     ],
     testFile: "tests/tickets/ticket-19.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "20",
@@ -139,7 +139,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Unit tests verify argument parsing and exit code mapping",
     ],
     testFile: "tests/tickets/ticket-20.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "21",

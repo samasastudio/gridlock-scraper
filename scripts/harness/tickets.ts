@@ -94,7 +94,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Only promotes patch to connector_configs.manifest if replay pass rate is 100%",
     ],
     testFile: "tests/tickets/ticket-06.test.ts",
-    expectedStatus: "In Progress",
+    expectedStatus: "Done",
   },
   {
     id: "07",
@@ -154,7 +154,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Verifies payload SHA-256 checksums before and after upload",
     ],
     testFile: "tests/tickets/ticket-21.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "22",
@@ -169,7 +169,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Dispatches webhook alert (Discord/Slack) if CLI exits with code 2 (anomaly quarantined)",
     ],
     testFile: "tests/tickets/ticket-22.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "23",

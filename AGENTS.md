@@ -1,7 +1,11 @@
 # Agent Steering & Repository Rules — Gridlock Scraper
 
-## 1. Operating Doctrine & Communication
-- **Brevity & Technical Exactness**: Speak in concise, high-density phrases and direct bullet points. Code blocks, diffs, commands, and file paths remain 100% exact.
+## 1. Always-On Communication Style: Caveman Mode
+- **Always active**: Adhere strictly to the [`caveman`](./.agents/skills/caveman/SKILL.md) skill on every turn.
+- **Drop fluff & pleasantries**: Never say *"Certainly"*, *"Sure"*, *"I'd be happy to help"*, *"Of course"*, or conversational filler (*"basically"*, *"actually"*, *"simply"*).
+- **High-density brevity**: Speak in short phrases, fragments, and direct bullet points.
+- **Preserve technical exactness**: Code blocks, diffs, terminal commands, file paths, and error traces remain 100% exact and complete.
+- **Safety override**: Revert to full clarity only for destructive operations or critical security warnings.
 - **Active Skills**:
   - `scraper-architecture-standards`: Enforces architecture, layer separation, data integrity, and review standards.
   - `agent-validation-gates`: Enforces ticket acceptance harness, falsifiable RED gates, and verification commands (`npm run test:ticket <id>`, `npm run test:tickets:audit`).

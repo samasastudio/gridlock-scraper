@@ -10,7 +10,7 @@ export interface StoredArtifactMetadata {
 }
 
 export class ArtifactStore {
-  constructor(private readonly baseDirectory: string = "./data/artifacts") {}
+  constructor(private readonly baseDirectory: string = "./data/artifacts") { }
 
   /**
    * Computes the cryptographic SHA-256 hash of a raw uncompressed payload buffer or string.
@@ -66,5 +66,6 @@ export class ArtifactStore {
       return gunzipSync(diskBytes);
     }
     return diskBytes;
+
   }
 }

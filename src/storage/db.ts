@@ -347,4 +347,58 @@ export class ScraperRepository {
     });
     return id;
   }
+
+  public async promotePatchAndRecordAudit(params: {
+    connectorId: string;
+    failureReason: string;
+    proposedPatch: Record<string, unknown>;
+    replayResults: Record<string, unknown>;
+  }): Promise<string> {
+    return await this.drizzle.transaction(async (tx) => {
+      const auditId = crypto.randomUUID();
+      await tx.insert(schema.repairAudits).values({
+        id: auditId,
+        connectorId: params.connectorId,
+        failureReason: params.failureReason,
+        proposedPatch: params.proposedPatch,
+        replayResults: params.replayResults,
+        status: "promoted",
+      });
+
+      await tx
+        .update(schema.connectorConfigs)
+        .set({
+          manifest: JSON.stringify(params.proposedPatch),
+          lastStatus: "ok",
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(schema.connectorConfigs.id, params.connectorId));
+
+      return auditId;
+    });
+  }
+
+  public async hasPromotedRepairAudit(connectorId: string): Promise<boolean> {
+    const audit = await this.drizzle
+      .select()
+      .from(schema.repairAudits)
+      .where(
+        sql`${schema.repairAudits.connectorId} = ${connectorId} AND ${schema.repairAudits.status} = 'promoted'`
+      )
+      .get();
+    return !!audit;
+  }
+
+  public async updateConnectorManifest(
+    id: string,
+    manifest: Record<string, unknown>
+  ): Promise<void> {
+    await this.drizzle
+      .update(schema.connectorConfigs)
+      .set({
+        manifest: JSON.stringify(manifest),
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.connectorConfigs.id, id));
+  }
 }

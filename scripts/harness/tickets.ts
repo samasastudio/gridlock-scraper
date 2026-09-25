@@ -198,7 +198,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Reprocessing requires verified promotion proof",
     ],
     testFile: "tests/tickets/ticket-24.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "25",
@@ -212,7 +212,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Subsequent scraper executions load updated selectors from connector_configs.manifest",
     ],
     testFile: "tests/tickets/ticket-25.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "26",
@@ -226,7 +226,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Update all pipeline and repair tests to provide explicit expected counts and IDs",
     ],
     testFile: "tests/tickets/ticket-26.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "27",
@@ -240,7 +240,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Zod schema rejects invalid statuses, triggering quarantine isolation on selector drift",
     ],
     testFile: "tests/tickets/ticket-27.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "28",
@@ -254,7 +254,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Fail validation on unclassifiable or missing action types",
     ],
     testFile: "tests/tickets/ticket-28.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "29",
@@ -268,6 +268,6 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Accurate provenance metadata recorded for downstream replay tooling",
     ],
     testFile: "tests/tickets/ticket-29.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
 ];

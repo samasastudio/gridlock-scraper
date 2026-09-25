@@ -2,13 +2,17 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ObservationCandidate } from "../schemas/common.js";
 import { ScraperRepository } from "../storage/db.js";
 
-export interface ReplayFixture {
+export type ReplayFixture = {
   id: string;
   content: string | Buffer;
   expectedMinCount?: number;
   expectedSubjectIds?: string[];
   expectedAssertion?: (observations: ObservationCandidate[]) => boolean;
-}
+} & (
+  | { expectedMinCount: number }
+  | { expectedSubjectIds: string[] }
+  | { expectedAssertion: (observations: ObservationCandidate[]) => boolean }
+);
 
 export interface ReplayEvaluationResult {
   passed: number;
@@ -28,6 +32,19 @@ export async function evaluateCandidatePatch(
   fixtures: ReplayFixture[],
   db: DatabaseSync
 ): Promise<ReplayEvaluationResult> {
+  for (const fixture of fixtures) {
+    const hasOracle =
+      (typeof fixture.expectedMinCount === "number" && fixture.expectedMinCount >= 0) ||
+      (Array.isArray(fixture.expectedSubjectIds) && fixture.expectedSubjectIds.length > 0) ||
+      typeof fixture.expectedAssertion === "function";
+
+    if (!hasOracle) {
+      throw new Error(
+        `ReplayFixture '${fixture.id}' must provide at least one semantic oracle (expectedMinCount, expectedSubjectIds, or expectedAssertion).`
+      );
+    }
+  }
+
   let passed = 0;
 
   for (const fixture of fixtures) {
@@ -61,16 +78,22 @@ export async function evaluateCandidatePatch(
   const allPassed = fixtures.length > 0 && passed === fixtures.length;
   const repo = new ScraperRepository(db);
 
-  const auditId = await repo.insertRepairAudit({
-    connectorId,
-    failureReason: "Self-healing candidate verification replay",
-    proposedPatch: proposedPatchDescription,
-    replayResults: { passed, total: fixtures.length, allPassed },
-    status: allPassed ? "promoted" : "rejected",
-  });
-
+  let auditId: string;
   if (allPassed) {
-    await repo.updateConnectorStatus(connectorId, "ok");
+    auditId = await repo.promotePatchAndRecordAudit({
+      connectorId,
+      failureReason: "Self-healing candidate verification replay",
+      proposedPatch: proposedPatchDescription,
+      replayResults: { passed, total: fixtures.length, allPassed },
+    });
+  } else {
+    auditId = await repo.insertRepairAudit({
+      connectorId,
+      failureReason: "Self-healing candidate verification replay",
+      proposedPatch: proposedPatchDescription,
+      replayResults: { passed, total: fixtures.length, allPassed },
+      status: "rejected",
+    });
   }
 
   return {

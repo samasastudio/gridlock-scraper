@@ -121,7 +121,7 @@ test("Self-healing replay harness verifies candidate patch against fixtures", as
   `).run();
 
   const fixtures = [
-    { id: "fix-1", content: SAMPLE_TDLR_HTML },
+    { id: "fix-1", content: SAMPLE_TDLR_HTML, expectedMinCount: 1 },
   ];
 
   const evalResult = await evaluateCandidatePatch(
@@ -198,6 +198,16 @@ test("Pipeline reprocesses quarantined artifact upon verified repair", async () 
 
   assert.equal(res1.anomaly, true);
   assert.equal(res1.observationsCount, 0);
+
+  // Insert verified promotion proof (ADR-0004, Ticket 24)
+  const repo = new ScraperRepository(db);
+  await repo.insertRepairAudit({
+    connectorId: "tdlr_repairable",
+    failureReason: "Verified healthy parser patch",
+    proposedPatch: { fixed: true },
+    replayResults: { passed: 1, total: 1, allPassed: true },
+    status: "promoted",
+  });
 
   // 2. Second run on identical payload but with repaired healthy parser
   const res2 = await runScraperPipeline({

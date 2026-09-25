@@ -75,6 +75,20 @@ export async function runScraperPipeline(
   const existingArtifact = await repo.findSourceArtifactByHash(sha256Hash);
   if (existingArtifact) {
     if (existingArtifact.connectorVersion === "quarantine") {
+      // Gate quarantine payload release on verified out-of-band promotion (ADR-0004, Ticket 24)
+      const hasPromotion = await repo.hasPromotedRepairAudit(options.connectorId);
+      if (!hasPromotion) {
+        return {
+          connectorId: options.connectorId,
+          sourceFamily: options.sourceFamily,
+          earlyExit: true,
+          sha256Hash,
+          observationsCount: 0,
+          sourceArtifactId: existingArtifact.id,
+          anomaly: true,
+        };
+      }
+
       // Known previously quarantined payload. Attempt re-processing with current parser (ADR-0004)
       try {
         const candidates = options.parser(contentStr);
@@ -144,6 +158,8 @@ export async function runScraperPipeline(
       failureReason: `Parser invariant failure: ${err.message}`,
       artifactStore: store,
       db: options.db,
+      contentType: rawResult.contentType,
+      extension: getExtensionForContentType(rawResult.contentType),
     });
     return {
       connectorId: options.connectorId,

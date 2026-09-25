@@ -35,11 +35,14 @@
 12. **Transactional Provenance**: `source_artifacts` insertion, observation emission, and connector status updates must execute atomically inside a typed Drizzle transaction (`this.drizzle.transaction`).
 13. **Mandatory Replay Oracles**: Historical replay fixtures must specify semantic assertions (`expectedMinCount`, `expectedSubjectIds`); promoting patches based on loose `obs.length > 0` checks is strictly prohibited.
 14. **Agent Validation Gate Invariant**: Every backlog ticket in `gridlock-scraper` must have a corresponding verification target (`tests/tickets/ticket-XX.test.ts`). Acceptance tests must be falsifiable RED (testing actual target contracts, schemas, and fixtures without placeholder stubs). Autonomous agents declare an issue complete if and only if `npm run test:ticket <id>` exits with code 0 and reports 100% acceptance criteria satisfied. Point to `agent-validation-gates` skill for verification protocol.
+15. **Bounded Anomaly Promotion**: Candidate self-healing repair patches must be strictly bound to specific quarantined failure records (by failure ID and temporal window). Arbitrary or unanchored anomaly clearance is strictly prohibited.
+16. **CLI Script Executability**: All operational scripts in `scripts/` must be directly invokable via CLI using entrypoint guards (`process.argv[1] === fileURLToPath(import.meta.url)`).
 
 ---
 
 ## 4. Verification Commands
-- `npm test`: Runs hermetic offline test suite via `tsx --test`.
+- `npm test`: Runs hermetic offline test suite via `tsx --test` (live portal tests in `tests/live/` are intentionally skipped offline per ADR-0005 unless `LIVE_TEST=1`).
+- `LIVE_TEST=1 npm test`: Opts into live integration smoke tests against external Texas agency portals (PowerShell: `$env:LIVE_TEST="1"; npm test; Remove-Item Env:\LIVE_TEST`).
 - `npm run typecheck`: TypeScript verification (`tsc --noEmit`).
 - `npm run test:ticket <id>`: Runs the validation gate for a specific ticket (e.g. `npm run test:ticket 23`).
 - `npm run test:tickets:audit`: Prints the backlog compliance audit matrix.

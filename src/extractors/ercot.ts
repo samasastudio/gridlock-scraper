@@ -27,6 +27,10 @@ export async function extractErcotQueue(
       timeout: timeoutMs,
     });
 
+    if (typeof page.setDefaultTimeout === "function") {
+      page.setDefaultTimeout(timeoutMs);
+    }
+
     // Register download event listener on page
     const downloadPromise = page.waitForEvent("download");
 

@@ -33,4 +33,4 @@ COPY --from=builder /app/dist ./dist
 # Run as unprivileged Playwright user
 USER pwuser
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/server.js"]

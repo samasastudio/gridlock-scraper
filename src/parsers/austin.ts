@@ -20,9 +20,13 @@ export function parseAustinPermitsJson(jsonContent: string): ObservationCandidat
   const observations: ObservationCandidate[] = [];
 
   for (const raw of records) {
-    const permitNumber = raw.permit_number ?? raw.permitNumber ?? "";
-    const status = raw.permit_status ?? raw.status ?? "";
-    const valuationUsd = Number(raw.total_valuation ?? raw.valuation ?? raw.valuationUsd ?? 0);
+    const permitNumber = raw.permit_number ?? raw.permitNumber;
+    const status = raw.permit_status ?? raw.status;
+    const rawValuation = raw.total_valuation ?? raw.valuation ?? raw.valuationUsd;
+    const valuationUsd =
+      rawValuation !== undefined && rawValuation !== null && rawValuation !== ""
+        ? Number(rawValuation)
+        : undefined;
     const applicantName = raw.applicant_full_name ?? raw.applicantName ?? raw.applicant;
     const parcelId = raw.parcel_id ?? raw.parcelId;
     const projectName = raw.project_name ?? raw.projectName;

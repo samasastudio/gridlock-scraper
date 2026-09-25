@@ -47,7 +47,18 @@ export async function fetchWithBackoff<T>(
   let attempt = 0;
   while (true) {
     try {
-      return await fetchFn();
+      const result = await fetchFn();
+      if (
+        result &&
+        typeof result === "object" &&
+        "status" in result &&
+        (result as any).status === 429
+      ) {
+        const err: any = new Error("HTTP 429 Rate Limit Exceeded");
+        err.status = 429;
+        throw err;
+      }
+      return result;
     } catch (err: any) {
       attempt++;
       const is429 =

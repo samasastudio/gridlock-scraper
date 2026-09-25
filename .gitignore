@@ -19,6 +19,12 @@ coverage/
 *.key
 *.pem
 
+# Local database & storage artifacts
+*.db
+*.db-journal
+*.sqlite
+.artifacts/
+
 # OS metadata
 .DS_Store
 Thumbs.db

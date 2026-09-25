@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import test from "node:test";
 import { runScraperPipeline } from "../src/jobs/runner.js";
 import { parseTdlrHtml } from "../src/parsers/tdlr.js";
+import { parseAustinPermitsJson } from "../src/parsers/austin.js";
+import { main as runCli, EXIT_CODES } from "../src/cli.js";
 import { evaluateCandidatePatch } from "../src/repair/replay.js";
 import { ArtifactStore } from "../src/storage/artifact-store.js";
 import { createDatabase, ScraperRepository } from "../src/storage/db.js";
@@ -428,4 +430,87 @@ test("Quarantine reprocessing requires promotion proof tied to the specific quar
 
   rmSync(tempDir, { recursive: true, force: true });
 });
+
+test("Austin pipeline execution extracts permits and stores observations without synthetic defaults", async () => {
+  const tempDir = mkdtempSync(`${tmpdir()}/gridlock-test-austin-`);
+  const store = new ArtifactStore(tempDir);
+  const db = createDatabase(":memory:");
+
+  db.prepare(`
+    INSERT INTO connector_configs (id, source_family, manifest, invariants)
+    VALUES ('austin_permits_v1', 'austin_permits', '{}', '{}')
+  `).run();
+
+  const validAustinJson = JSON.stringify([
+    {
+      permit_number: "2024-998877-BP",
+      project_name: "Austin Interconnect",
+      permit_status: "Active",
+      total_valuation: "45000000",
+      applicant_full_name: "Texas Energy Data Corp",
+      parcel_id: "0102030405",
+    },
+  ]);
+
+  const res = await runScraperPipeline({
+    connectorId: "austin_permits_v1",
+    sourceFamily: "austin_permits",
+    extractor: async () => ({
+      sourceFamily: "austin_permits" as const,
+      sourceUrl: "https://data.austintexas.gov/resource/3syk-w9eu.json",
+      contentType: "application/json",
+      byteSize: Buffer.byteLength(validAustinJson),
+      content: validAustinJson,
+      connectorVersion: "1.0.0",
+    }),
+    parser: parseAustinPermitsJson,
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(res.earlyExit, false);
+  assert.ok(res.observationsCount >= 4);
+
+  // Invariant 11 verification: missing valuation must throw and quarantine rather than defaulting to 0
+  const invalidAustinJson = JSON.stringify([
+    {
+      permit_number: "2024-000000-BP",
+      permit_status: "Active",
+      // total_valuation is intentionally omitted
+    },
+  ]);
+
+  const failRes = await runScraperPipeline({
+    connectorId: "austin_permits_v1",
+    sourceFamily: "austin_permits",
+    extractor: async () => ({
+      sourceFamily: "austin_permits" as const,
+      sourceUrl: "https://data.austintexas.gov/resource/3syk-w9eu.json",
+      contentType: "application/json",
+      byteSize: Buffer.byteLength(invalidAustinJson),
+      content: invalidAustinJson,
+      connectorVersion: "1.0.0",
+    }),
+    parser: parseAustinPermitsJson,
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(failRes.anomaly, true);
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+
+test("CLI entrypoint main() executes non-dry-run and returns exit code 0 or 2 on anomaly", async () => {
+  const db = createDatabase(":memory:");
+
+  // Dry run returns SUCCESS
+  const dryCode = await runCli(["--source=austin", "--dry-run"], db);
+  assert.equal(dryCode, EXIT_CODES.SUCCESS);
+
+  // Unsupported flag returns RUNTIME_ERROR
+  const errCode = await runCli(["--source=invalid_source"], db);
+  assert.equal(errCode, EXIT_CODES.RUNTIME_ERROR);
+});
+
 

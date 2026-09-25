@@ -65,7 +65,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Handles 429 rate limiting with exponential backoff and jitter",
     ],
     testFile: "tests/tickets/ticket-04.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "05",
@@ -184,7 +184,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Fall back gracefully or raise extraction anomaly on network timeout",
     ],
     testFile: "tests/tickets/ticket-23.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "24",

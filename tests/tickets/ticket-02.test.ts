@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { gzipSync } from "node:zlib";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { ArtifactStore } from "../../src/storage/artifact-store.js";
 import { createDatabase, ScraperRepository } from "../../src/storage/db.js";
 
@@ -19,12 +19,18 @@ test("Ticket 02 - Criteria 1: Payloads compressed/stored with SHA-256 hash verif
   assert.equal(meta.sha256Hash, expectedHash);
   assert.equal(meta.byteSize, Buffer.byteLength(rawPayload));
 
+  // Inspect on-disk artifact: must be compressed with gzip (magic bytes 0x1f 0x8b)
+  const onDiskBytes = fs.readFileSync(meta.storagePath);
+  assert.equal(onDiskBytes[0], 0x1f, "Must have gzip magic byte 0x1f");
+  assert.equal(onDiskBytes[1], 0x8b, "Must have gzip magic byte 0x8b");
+
+  // Decompressing stored on-disk file must yield original uncompressed payload
+  const decompressed = gunzipSync(onDiskBytes);
+  assert.equal(decompressed.toString("utf8"), rawPayload);
+
+  // Store retrieve method must transparently return uncompressed payload
   const retrieved = store.retrieve(meta.storagePath);
   assert.equal(retrieved.toString("utf8"), rawPayload);
-
-  // Compression verification
-  const compressed = gzipSync(retrieved);
-  assert.ok(compressed.length > 0, "Payload can be gzip compressed");
 
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });

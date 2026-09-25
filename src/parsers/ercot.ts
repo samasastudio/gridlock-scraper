@@ -3,6 +3,9 @@ import { validateErcotInvariants } from "../schemas/ercot.js";
 
 /**
  * Parses a single CSV line according to RFC 4180 rules, handling quotes and escaped quotes.
+ * NOTE (Architecture Rationale): A stateful character loop is intentionally used here
+ * instead of regular expressions to guarantee O(N) single-pass tokenization and prevent
+ * exponential backtracking vulnerabilities on arbitrary external CSV payloads.
  */
 export function parseCsvLine(line: string): string[] {
   const fields: string[] = [];
@@ -27,6 +30,66 @@ export function parseCsvLine(line: string): string[] {
   }
   fields.push(current.trim());
   return fields;
+}
+
+interface ErcotColumnIndices {
+  inrIdx: number;
+  nameIdx: number;
+  fuelIdx: number;
+  mwIdx: number;
+  countyIdx: number;
+}
+
+/**
+ * Maps a single CSV row to domain observation candidates.
+ * Pure transformation isolating invariant checks and field extraction for unit debugging.
+ */
+function mapCsvLineToObservations(
+  line: string,
+  indices: ErcotColumnIndices
+): ObservationCandidate[] {
+  const cols = parseCsvLine(line);
+  const inrNumber = indices.inrIdx >= 0 && cols[indices.inrIdx] ? cols[indices.inrIdx]! : "";
+  const projectName = indices.nameIdx >= 0 && cols[indices.nameIdx] ? cols[indices.nameIdx]! : "";
+  const fuelType = indices.fuelIdx >= 0 && cols[indices.fuelIdx] ? cols[indices.fuelIdx]! : "";
+  const capacityRaw = indices.mwIdx >= 0 && cols[indices.mwIdx] ? cols[indices.mwIdx]! : "";
+  const capacityMw = parseFloat(capacityRaw);
+  const county = indices.countyIdx >= 0 && cols[indices.countyIdx] ? cols[indices.countyIdx]! : "";
+
+  const validated = validateErcotInvariants({
+    inrNumber,
+    projectName,
+    fuelType,
+    capacityMw,
+    county,
+  });
+
+  return [
+    {
+      subjectType: "facility",
+      subjectId: validated.inrNumber,
+      property: "power_capacity_mw",
+      valueJson: { mw: validated.capacityMw },
+      confidence: 1.0,
+      resolutionMethod: "deterministic",
+    },
+    {
+      subjectType: "facility",
+      subjectId: validated.inrNumber,
+      property: "fuel_type",
+      valueJson: { fuelType: validated.fuelType },
+      confidence: 1.0,
+      resolutionMethod: "deterministic",
+    },
+    {
+      subjectType: "location",
+      subjectId: `${validated.county}_county`.toLowerCase(),
+      property: "county",
+      valueJson: { county: validated.county, state: "TX" },
+      confidence: 1.0,
+      resolutionMethod: "deterministic",
+    },
+  ];
 }
 
 /**
@@ -56,52 +119,8 @@ export function parseErcotCsv(csvContent: string): ObservationCandidate[] {
     );
   }
 
-  const observations: ObservationCandidate[] = [];
-
-  for (let i = 1; i < lines.length; i++) {
-    const cols = parseCsvLine(lines[i]!);
-    const inrNumber = inrIdx >= 0 && cols[inrIdx] ? cols[inrIdx]! : "";
-    const projectName = nameIdx >= 0 && cols[nameIdx] ? cols[nameIdx]! : "";
-    const fuelType = fuelIdx >= 0 && cols[fuelIdx] ? cols[fuelIdx]! : "";
-    const capacityRaw = mwIdx >= 0 && cols[mwIdx] ? cols[mwIdx]! : "";
-    const capacityMw = parseFloat(capacityRaw);
-    const county = countyIdx >= 0 && cols[countyIdx] ? cols[countyIdx]! : "";
-
-    const validated = validateErcotInvariants({
-      inrNumber,
-      projectName,
-      fuelType,
-      capacityMw,
-      county,
-    });
-
-    observations.push(
-      {
-        subjectType: "facility",
-        subjectId: validated.inrNumber,
-        property: "power_capacity_mw",
-        valueJson: { mw: validated.capacityMw },
-        confidence: 1.0,
-        resolutionMethod: "deterministic",
-      },
-      {
-        subjectType: "facility",
-        subjectId: validated.inrNumber,
-        property: "fuel_type",
-        valueJson: { fuelType: validated.fuelType },
-        confidence: 1.0,
-        resolutionMethod: "deterministic",
-      },
-      {
-        subjectType: "location",
-        subjectId: `${validated.county}_county`.toLowerCase(),
-        property: "county",
-        valueJson: { county: validated.county, state: "TX" },
-        confidence: 1.0,
-        resolutionMethod: "deterministic",
-      }
-    );
-  }
+  const indices: ErcotColumnIndices = { inrIdx, nameIdx, fuelIdx, mwIdx, countyIdx };
+  const observations = lines.slice(1).flatMap((line) => mapCsvLineToObservations(line, indices));
 
   if (observations.length === 0) {
     throw new Error("ERCOT CSV contains zero valid data rows (empty queue payload).");

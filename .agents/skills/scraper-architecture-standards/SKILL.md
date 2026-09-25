@@ -30,6 +30,7 @@ Comprehensive architectural, organizational, and code standards for `gridlock-sc
 | **Decomposed Factory Returns** | Service factories must extract multi-line async methods into standalone functions and return clean reference objects. | AGENTS.md |
 | **Execution Integrity** | CLI and container entrypoints must wire real pipeline runners and return deterministic exit codes (0, 1, 2). | AGENTS.md |
 | **Agent Validation Gates** | Backlog tickets validated via dedicated `tests/tickets/ticket-XX.test.ts` suites; `npm run test:ticket <id>` acts as the definitive Definition of Done. | ADR-0006, ADR-0008 |
+| **Functional Transforms & Flat Control Flow** | Prefer pure array methods (`flatMap`, `map`) and early returns over mutable loop accumulators and deep nesting. Necessary loops must have documented architectural rationale. | Code Standard |
 
 ---
 
@@ -107,6 +108,10 @@ Review every scraper PR against this checklist:
 - [ ] **HTTP 429 Response Check**: Does rate-limit retry logic handle resolved response objects with `status === 429` as well as thrown exceptions?
 - [ ] **Agent Validation Gate**: Does the implementation satisfy `npm run test:ticket <id>` with exit code 0?
 - [ ] **Falsifiable Red Spec**: Was the ticket acceptance test verified RED against real contracts before implementation without placeholder stubs?
+- [ ] **Pure Record Transformations**: Does record/line parsing use pure functions and `flatMap`/`map` rather than mutating shared accumulator arrays (`observations.push()`)?
+- [ ] **Flat Control Flow**: Are nested `if/else` ladders avoided in favor of early returns or strategy arrays?
+- [ ] **Documented Loop Rationale**: If an imperative loop, sequential iteration, or stateful scanner is used, does an inline comment explain why (e.g., SQLite write transaction locks, agency rate limits, RFC 4180 parsing)?
+- [ ] **Structured Replay Diagnostics**: Does the replay test harness return structured failure records per fixture rather than swallowing errors in blanket catch blocks?
 - [ ] **Commit Message**: Does commit conform to Conventional Commits (`feat:`, `fix:`, `chore:`, etc.)?
 
 ---
@@ -128,3 +133,6 @@ Review every scraper PR against this checklist:
 13. **Inert CLI Scripts**: Creating standalone scripts in `scripts/` that only export functions without an executable top-level invocation block.
 14. **Stacked Inline Method Literals**: Inlining heavy multi-line asynchronous methods directly inside a returned object literal in client factory functions, creating unreadable nested blocks.
 15. **Hollow Orchestration Entrypoints**: Creating CLI commands or container default processes that return exit code 0 without executing pipelines or starting background workers.
+16. **Mutable Parsing Accumulators**: Instantiating empty arrays and pushing observations inside `for` loops instead of pure `flatMap(mapRecordToObservations)`.
+17. **Undocumented Imperative Loops**: Using `for` or `while` loops for sequential operations without inline comments explaining the operational necessity (e.g. rate-limiting, transaction locks).
+18. **Swallowed Replay Errors**: Using `for..continue` with a simple numeric counter (`passed++`) that discards why historical fixtures or candidate patches failed.

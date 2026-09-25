@@ -82,6 +82,9 @@ export function createServer(options: CreateServerOptions = {}): ScraperServer {
                 : "all";
 
             const jobs = resolveJobsToRun(sourceKey as any);
+            // NOTE (Architecture Rationale): Sequential iteration is mandatory
+            // to prevent concurrent transaction locks in SQLite and prevent triggering
+            // rate-limiting across external Texas state agency portals.
             for (const job of jobs) {
               await runScraperPipeline({
                 connectorId: job.connectorId,
@@ -156,10 +159,15 @@ export function createServer(options: CreateServerOptions = {}): ScraperServer {
           .all() as any[];
 
         if (Array.isArray(configRows)) {
-          for (const row of configRows) {
-            const key = row.source_family ?? row.id;
-            connectorsStatus[key] = row.last_status === "idle" ? "ok" : row.last_status;
-          }
+          Object.assign(
+            connectorsStatus,
+            Object.fromEntries(
+              configRows.map((row) => [
+                row.source_family ?? row.id,
+                row.last_status === "idle" ? "ok" : row.last_status,
+              ])
+            )
+          );
         }
       } catch {
         // Fallback to defaults

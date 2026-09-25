@@ -4,6 +4,7 @@
 - **Brevity & Technical Exactness**: Speak in concise, high-density phrases and direct bullet points. Code blocks, diffs, commands, and file paths remain 100% exact.
 - **Active Skills**:
   - `scraper-architecture-standards`: Enforces architecture, layer separation, data integrity, and review standards.
+  - `agent-validation-gates`: Enforces ticket acceptance harness, falsifiable RED gates, and verification commands (`npm run test:ticket <id>`, `npm run test:tickets:audit`).
 
 ---
 
@@ -12,7 +13,7 @@
 - **Browser Automation**: Playwright (Headless Chromium).
 - **Database & Storage**: Drizzle ORM (`drizzle-orm`, `drizzle-kit`) with SQLite (`node:sqlite`). Content-addressable raw `ArtifactStore`.
 - **Validation**: Zod for schema contracts and domain invariants.
-- **Architectural Reference**: Decisions documented under `docs/adr/` (ADR-0001 through ADR-0005) and `CONTEXT.md`.
+- **Architectural Reference**: Decisions documented under `docs/adr/` (ADR-0001 through ADR-0008) and `CONTEXT.md`.
 
 ---
 
@@ -33,10 +34,14 @@
 11. **Zero Synthetic Defaults**: Never use fallbacks (`|| 0`, `|| "Austin"`, `|| "under_review"`, `|| "zoning"`) to satisfy schema contracts. Missing or unmapped fields must fail Zod invariants and trigger quarantine.
 12. **Transactional Provenance**: `source_artifacts` insertion, observation emission, and connector status updates must execute atomically inside a typed Drizzle transaction (`this.drizzle.transaction`).
 13. **Mandatory Replay Oracles**: Historical replay fixtures must specify semantic assertions (`expectedMinCount`, `expectedSubjectIds`); promoting patches based on loose `obs.length > 0` checks is strictly prohibited.
+14. **Agent Validation Gate Invariant**: Every backlog ticket in `gridlock-scraper` must have a corresponding verification target (`tests/tickets/ticket-XX.test.ts`). Acceptance tests must be falsifiable RED (testing actual target contracts, schemas, and fixtures without placeholder stubs). Autonomous agents declare an issue complete if and only if `npm run test:ticket <id>` exits with code 0 and reports 100% acceptance criteria satisfied. Point to `agent-validation-gates` skill for verification protocol.
 
 ---
 
 ## 4. Verification Commands
 - `npm test`: Runs hermetic offline test suite via `tsx --test`.
 - `npm run typecheck`: TypeScript verification (`tsc --noEmit`).
+- `npm run test:ticket <id>`: Runs the validation gate for a specific ticket (e.g. `npm run test:ticket 23`).
+- `npm run test:tickets:audit`: Prints the backlog compliance audit matrix.
+- `npm run test:tickets`: Runs all ticket acceptance suites.
 - Git commits gated by Husky and Conventional Commits (`@commitlint/cli`).

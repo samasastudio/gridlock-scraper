@@ -1,0 +1,27 @@
+[
+  {
+    "permit_number": "2024-118921-BP",
+    "project_name": "Austin Compute Substation Switchyard Expansion",
+    "permit_status": "Active",
+    "total_valuation": "85000000",
+    "applicant_full_name": "Lone Star Data Infrastructure LLC",
+    "parcel_id": "0219080312",
+    "applied_date": "2024-08-15T09:30:00.000",
+    "issue_date": "2024-09-10T14:15:00.000",
+    "calendar_year": "2024",
+    "work_class": "New",
+    "permit_type_desc": "Commercial Building Permit"
+  },
+  {
+    "permit_number": "2024-099412-BP",
+    "project_name": "Metro Fiber Interconnect Facility",
+    "permit_status": "Under Review",
+    "total_valuation": "12000000",
+    "applicant_full_name": "Texas Network Systems",
+    "parcel_id": "0104050211",
+    "applied_date": "2024-09-02T11:00:00.000",
+    "calendar_year": "2024",
+    "work_class": "Remodel",
+    "permit_type_desc": "Commercial Building Permit"
+  }
+]

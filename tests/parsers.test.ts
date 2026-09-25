@@ -31,6 +31,14 @@ test("TDLR pure parser extracts project and location observations from fixture",
   const locObs = observations.find((o) => o.property === "address_details");
   assert.ok(locObs);
   assert.equal((locObs.valueJson as any).county, "Travis");
+
+  const ownerObs = observations.find((o) => o.property === "owner");
+  assert.ok(ownerObs);
+  assert.deepEqual(ownerObs.valueJson, { owner: "Red River Hyperscale LLC" });
+
+  const archObs = observations.find((o) => o.property === "architect");
+  assert.ok(archObs);
+  assert.deepEqual(archObs.valueJson, { architect: "Corgan Associates Inc" });
 });
 
 test("TDLR invariant validation rejects invalid project number format", () => {

@@ -37,6 +37,8 @@
 14. **Agent Validation Gate Invariant**: Every backlog ticket in `gridlock-scraper` must have a corresponding verification target (`tests/tickets/ticket-XX.test.ts`). Acceptance tests must be falsifiable RED (testing actual target contracts, schemas, and fixtures without placeholder stubs). Autonomous agents declare an issue complete if and only if `npm run test:ticket <id>` exits with code 0 and reports 100% acceptance criteria satisfied. Point to `agent-validation-gates` skill for verification protocol.
 15. **Bounded Anomaly Promotion**: Candidate self-healing repair patches must be strictly bound to specific quarantined failure records (by failure ID and temporal window). Arbitrary or unanchored anomaly clearance is strictly prohibited.
 16. **CLI Script Executability**: All operational scripts in `scripts/` must be directly invokable via CLI using entrypoint guards (`process.argv[1] === fileURLToPath(import.meta.url)`).
+17. **Decomposed Factory Returns**: When authoring client or service factories, avoid defining multi-line asynchronous methods inline inside returned object literals. Extract operations into top-level single-responsibility functions and return an object composed of function references (`return { getObject, putObject, copyObject, deleteObject };`).
+18. **Execution Integrity**: CLI entrypoints and Docker containers must wire live database repositories and pipeline runners; returning unconditional success without executing the pipeline is strictly prohibited.
 
 ---
 

@@ -30,7 +30,8 @@ export async function evaluateCandidatePatch(
   proposedPatchDescription: Record<string, unknown>,
   candidateParser: (content: string) => ObservationCandidate[],
   fixtures: ReplayFixture[],
-  db: DatabaseSync
+  db: DatabaseSync,
+  options?: { quarantinedArtifactId?: string }
 ): Promise<ReplayEvaluationResult> {
   for (const fixture of fixtures) {
     const hasOracle =
@@ -78,20 +79,27 @@ export async function evaluateCandidatePatch(
   const allPassed = fixtures.length > 0 && passed === fixtures.length;
   const repo = new ScraperRepository(db);
 
+  const replayResults: Record<string, unknown> = {
+    passed,
+    total: fixtures.length,
+    allPassed,
+    ...(options?.quarantinedArtifactId ? { quarantinedArtifactId: options.quarantinedArtifactId } : {}),
+  };
+
   let auditId: string;
   if (allPassed) {
     auditId = await repo.promotePatchAndRecordAudit({
       connectorId,
       failureReason: "Self-healing candidate verification replay",
       proposedPatch: proposedPatchDescription,
-      replayResults: { passed, total: fixtures.length, allPassed },
+      replayResults,
     });
   } else {
     auditId = await repo.insertRepairAudit({
       connectorId,
       failureReason: "Self-healing candidate verification replay",
       proposedPatch: proposedPatchDescription,
-      replayResults: { passed, total: fixtures.length, allPassed },
+      replayResults,
       status: "rejected",
     });
   }

@@ -76,7 +76,7 @@ export async function runScraperPipeline(
   if (existingArtifact) {
     if (existingArtifact.connectorVersion === "quarantine") {
       // Gate quarantine payload release on verified out-of-band promotion (ADR-0004, Ticket 24)
-      const hasPromotion = await repo.hasPromotedRepairAudit(options.connectorId);
+      const hasPromotion = await repo.hasPromotedRepairAudit(options.connectorId, existingArtifact);
       if (!hasPromotion) {
         return {
           connectorId: options.connectorId,

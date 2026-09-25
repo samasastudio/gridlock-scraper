@@ -378,15 +378,44 @@ export class ScraperRepository {
     });
   }
 
-  public async hasPromotedRepairAudit(connectorId: string): Promise<boolean> {
-    const audit = await this.drizzle
+  public async hasPromotedRepairAudit(
+    connectorId: string,
+    artifact?: SourceArtifact | { id: string; capturedAt?: string }
+  ): Promise<boolean> {
+    const audits = await this.drizzle
       .select()
       .from(schema.repairAudits)
       .where(
         sql`${schema.repairAudits.connectorId} = ${connectorId} AND ${schema.repairAudits.status} = 'promoted'`
       )
-      .get();
-    return !!audit;
+      .all();
+
+    if (audits.length === 0) return false;
+    if (!artifact) return true;
+
+    return audits.some((audit) => {
+      let replayResults: any = audit.replayResults;
+      if (typeof replayResults === "string") {
+        try {
+          replayResults = JSON.parse(replayResults);
+        } catch {
+          replayResults = {};
+        }
+      }
+
+      // Explicit binding to this quarantined artifact ID
+      if (replayResults?.quarantinedArtifactId === artifact.id) {
+        return true;
+      }
+
+      // Temporal binding: promoted audit must be at or after the artifact's quarantine timestamp
+      if (audit.createdAt && artifact.capturedAt) {
+        return audit.createdAt >= artifact.capturedAt;
+      }
+
+      // If capturedAt is not available on artifact, accept any promoted audit for this connector
+      return true;
+    });
   }
 
   public async updateConnectorManifest(

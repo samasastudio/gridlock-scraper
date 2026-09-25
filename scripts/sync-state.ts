@@ -154,3 +154,47 @@ export async function syncArtifactBlobsToR2(
 
   return { syncedCount };
 }
+
+// Auto-execute when run directly from command line
+const scriptPath = process.argv[1]?.replace(/\\/g, "/") ?? "";
+if (scriptPath.endsWith("sync-state.ts") || scriptPath.endsWith("sync-state.js")) {
+  const isHydrate = process.argv.includes("--hydrate");
+  const isPublish = process.argv.includes("--publish");
+  const targetDbPath = process.env.GRIDLOCK_DB_PATH ?? path.resolve(process.cwd(), "gridlock.db");
+  const artifactsDir = process.env.ARTIFACTS_DIR ?? path.resolve(process.cwd(), ".artifacts");
+
+  // Basic mock client when running offline or without credentials
+  const defaultR2Client: R2ClientInterface = {
+    putObject: async () => ({}),
+    getObject: async () => null,
+  };
+
+  if (isHydrate) {
+    hydrateStateFromR2({ r2Client: defaultR2Client, targetDbPath })
+      .then((res) => {
+        console.log(
+          `[sync-state] State hydration complete. Hydrated from remote: ${res.hydratedFromRemote}`
+        );
+        process.exit(0);
+      })
+      .catch((err) => {
+        console.error(`[sync-state] State hydration failed: ${err.message}`);
+        process.exit(1);
+      });
+  } else if (isPublish) {
+    if (!fs.existsSync(targetDbPath)) {
+      console.log(`[sync-state] Target DB does not exist at ${targetDbPath}, creating schema before publish...`);
+      createDatabase(targetDbPath).close();
+    }
+    publishStateToR2({ r2Client: defaultR2Client, localDbPath: targetDbPath, artifactsDir })
+      .then(() => syncArtifactBlobsToR2({ r2Client: defaultR2Client, artifactsDir }))
+      .then((res) => {
+        console.log(`[sync-state] State publish complete. Synced ${res.syncedCount} blobs.`);
+        process.exit(0);
+      })
+      .catch((err) => {
+        console.error(`[sync-state] State publish failed: ${err.message}`);
+        process.exit(1);
+      });
+  }
+}

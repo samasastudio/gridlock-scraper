@@ -301,3 +301,131 @@ test("Replay harness rejects candidate patches that regress observation counts o
     .get() as any;
   assert.equal(configRow.last_status, "idle"); // Not promoted to ok
 });
+
+test("Quarantine reprocessing requires promotion proof tied to the specific quarantined event, ignoring obsolete historical audits", async () => {
+  const tempDir = mkdtempSync(`${tmpdir()}/gridlock-test-bind-`);
+  const store = new ArtifactStore(tempDir);
+  const db = createDatabase(":memory:");
+  const repo = new ScraperRepository(db);
+
+  db.prepare(`
+    INSERT INTO connector_configs (id, source_family, manifest, invariants)
+    VALUES ('tdlr_multi_drift', 'tdlr_tabs', '{}', '{}')
+  `).run();
+
+  // 1. Insert an old promoted repair audit from an earlier drift event in the past
+  await repo.insertRepairAudit({
+    connectorId: "tdlr_multi_drift",
+    failureReason: "Old selector drift fixed last month",
+    proposedPatch: { version: 1 },
+    replayResults: { passed: 1, total: 1, allPassed: true, quarantinedArtifactId: "art-old" },
+    status: "promoted",
+  });
+
+  // Manually backdate the old audit's createdAt to ensure it strictly precedes the new quarantine
+  db.prepare(`
+    UPDATE repair_audits SET created_at = '2026-01-01 00:00:00' WHERE connector_id = 'tdlr_multi_drift'
+  `).run();
+
+  const newFailingHtml = `<html><body><span id="new_unknown_id">TABS2024999999</span></body></html>`;
+
+  // 2. A new, unrelated payload is quarantined today
+  const res1 = await runScraperPipeline({
+    connectorId: "tdlr_multi_drift",
+    sourceFamily: "tdlr_tabs",
+    extractor: async () => ({
+      sourceFamily: "tdlr_tabs" as const,
+      sourceUrl: "https://www.tdlr.texas.gov/TABS/test",
+      contentType: "text/html",
+      byteSize: Buffer.byteLength(newFailingHtml),
+      content: newFailingHtml,
+      connectorVersion: "1.0.0",
+    }),
+    parser: () => {
+      throw new Error("New selector drift failure");
+    },
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(res1.anomaly, true);
+
+  // 3. Parser is run again without a new promotion proof for this new quarantine.
+  // Even though 'tdlr_multi_drift' has an old promoted audit from January, this new quarantine must NOT be reprocessed!
+  const res2 = await runScraperPipeline({
+    connectorId: "tdlr_multi_drift",
+    sourceFamily: "tdlr_tabs",
+    extractor: async () => ({
+      sourceFamily: "tdlr_tabs" as const,
+      sourceUrl: "https://www.tdlr.texas.gov/TABS/test",
+      contentType: "text/html",
+      byteSize: Buffer.byteLength(newFailingHtml),
+      content: newFailingHtml,
+      connectorVersion: "1.0.1",
+    }),
+    parser: () => [
+      {
+        subjectType: "project",
+        subjectId: "TABS2024999999",
+        property: "name",
+        valueJson: { name: "Test" },
+      },
+    ],
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(
+    res2.earlyExit,
+    true,
+    "Must early exit and remain in quarantine when only obsolete audits exist"
+  );
+  assert.equal(res2.observationsCount, 0);
+
+  // 4. Now evaluate and promote a new patch explicitly tied to this new quarantined artifact
+  await evaluateCandidatePatch(
+    "tdlr_multi_drift",
+    { selector: "#new_unknown_id" },
+    () => [
+      {
+        subjectType: "project",
+        subjectId: "TABS2024999999",
+        property: "name",
+        valueJson: { name: "Test" },
+      },
+    ],
+    [{ id: "fix-new", content: newFailingHtml, expectedMinCount: 1 }],
+    db,
+    { quarantinedArtifactId: res1.sourceArtifactId }
+  );
+
+  // 5. Subsequent run now successfully reprocesses the quarantined artifact!
+  const res3 = await runScraperPipeline({
+    connectorId: "tdlr_multi_drift",
+    sourceFamily: "tdlr_tabs",
+    extractor: async () => ({
+      sourceFamily: "tdlr_tabs" as const,
+      sourceUrl: "https://www.tdlr.texas.gov/TABS/test",
+      contentType: "text/html",
+      byteSize: Buffer.byteLength(newFailingHtml),
+      content: newFailingHtml,
+      connectorVersion: "1.0.2",
+    }),
+    parser: () => [
+      {
+        subjectType: "project",
+        subjectId: "TABS2024999999",
+        property: "name",
+        valueJson: { name: "Test" },
+      },
+    ],
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(res3.earlyExit, false);
+  assert.equal(res3.observationsCount, 1);
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+

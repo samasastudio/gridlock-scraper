@@ -43,6 +43,7 @@
 16. **CLI Script Executability**: All operational scripts in `scripts/` must be directly invokable via CLI using entrypoint guards (`process.argv[1] === fileURLToPath(import.meta.url)`).
 17. **Decomposed Factory Returns**: When authoring client or service factories, avoid defining multi-line asynchronous methods inline inside returned object literals. Extract operations into top-level single-responsibility functions and return an object composed of function references (`return { getObject, putObject, copyObject, deleteObject };`).
 18. **Execution Integrity**: CLI entrypoints and Docker containers must wire live database repositories and pipeline runners; returning unconditional success without executing the pipeline is strictly prohibited.
+19. **Functional Transforms & Flat Control Flow**: Prefer pure array methods (`flatMap`, `map`, `filter`, `reduce`) and Node 22 standard library primitives (`node:stream/consumers`, `fs.readdirSync({ recursive: true })`, `node:util.parseArgs`) over mutable loop accumulators and custom recursion. Replace nested condition ladders with early returns and Strategy Pattern dispatch. Where sequential iteration, mutative loops, or state-machine scanners are strictly required (e.g., SQLite write locks, agency rate limiting, RFC 4180 parsing), inline code comments must document the architectural rationale.
 
 ---
 

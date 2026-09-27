@@ -142,25 +142,30 @@ function mapCandidateToObservation(
   };
 }
 
+function hasDocumentFallbackMatch($: cheerio.CheerioAPI, html: string): boolean {
+  return $("td:contains('Case #:')").length > 0 || /C\d{2}-\d{4}-\d{4}/.test(html);
+}
+
 /**
  * Pure parser for municipal agenda packets and development action HTML/text.
- * Implements strategy pipeline to decouple format detection from domain invariant mapping.
+ * Implements functional strategy pipeline to decouple format detection from domain invariant mapping.
  */
 export function parseMunicipalAgenda(html: string): ObservationCandidate[] {
   const $ = cheerio.load(html);
 
-  const strategies = [
-    () => extractFromAgendaItemContainers($),
-    () => extractFromIdentifierRows($),
-    () => extractFromDocumentFallback($, html),
+  const strategies: Array<() => RawMunicipalCandidate[] | null> = [
+    () => ($(".agenda-item").length > 0 ? extractFromAgendaItemContainers($) : null),
+    () => ($(".action-identifier").length > 0 ? extractFromIdentifierRows($) : null),
+    () => (hasDocumentFallbackMatch($, html) ? extractFromDocumentFallback($, html) : null),
   ];
 
-  for (const strategy of strategies) {
-    const rawCandidates = strategy().filter((c) => c.actionIdentifier.length > 0);
-    if (rawCandidates.length > 0) {
-      return rawCandidates.map(mapCandidateToObservation);
-    }
+  const matchedCandidates = strategies
+    .map((runStrategy) => runStrategy())
+    .find((candidates): candidates is RawMunicipalCandidate[] => candidates !== null);
+
+  if (!matchedCandidates || matchedCandidates.length === 0) {
+    throw new Error("Municipal agenda payload contains zero valid action items.");
   }
 
-  throw new Error("Municipal agenda payload contains zero valid action items.");
+  return matchedCandidates.map(mapCandidateToObservation);
 }

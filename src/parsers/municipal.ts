@@ -150,7 +150,8 @@ function hasDocumentFallbackMatch($: cheerio.CheerioAPI, html: string): boolean 
  * Pure parser for municipal agenda packets and development action HTML/text.
  * Implements functional strategy pipeline to decouple format detection from domain invariant mapping.
  */
-export function parseMunicipalAgenda(html: string): ObservationCandidate[] {
+export function parseMunicipalAgenda(raw: string | Buffer): ObservationCandidate[] {
+  const html = Buffer.isBuffer(raw) ? raw.toString("utf8") : raw;
   const $ = cheerio.load(html);
 
   const strategies: Array<() => RawMunicipalCandidate[] | null> = [

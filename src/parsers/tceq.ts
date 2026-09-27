@@ -6,7 +6,8 @@ import { validateTceqInvariants } from "../schemas/tceq.js";
  * Pure parser for TCEQ environmental authorization records.
  * Zero browser or database dependencies.
  */
-export function parseTceqHtml(html: string): ObservationCandidate[] {
+export function parseTceqHtml(raw: string | Buffer): ObservationCandidate[] {
+  const html = Buffer.isBuffer(raw) ? raw.toString("utf8") : raw;
   const $ = cheerio.load(html);
 
   const permitNumber =

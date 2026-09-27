@@ -6,7 +6,8 @@ import { validateTdlrInvariants } from "../schemas/tdlr.js";
  * Pure parser for TDLR TABS HTML detail pages.
  * Zero browser or database dependencies.
  */
-export function parseTdlrHtml(html: string): ObservationCandidate[] {
+export function parseTdlrHtml(raw: string | Buffer): ObservationCandidate[] {
+  const html = Buffer.isBuffer(raw) ? raw.toString("utf8") : raw;
   const $ = cheerio.load(html);
 
   // Extract from typical ASP.NET WebForms table / label ids or semantic table cells

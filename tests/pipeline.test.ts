@@ -516,4 +516,70 @@ test("CLI entrypoint main() executes non-dry-run and returns exit code 0 or 2 on
   assert.equal(errCode, EXIT_CODES.RUNTIME_ERROR);
 });
 
+test("Promoted repair audit with mismatched quarantinedArtifactId is terminal and does not fall back to temporal check", async () => {
+  const db = createDatabase(":memory:");
+  const repo = new ScraperRepository(db);
+
+  await repo.ensureConnectorConfigs([
+    { id: "tdlr_terminal_test", sourceFamily: "tdlr_tabs" },
+  ]);
+
+  await repo.insertRepairAudit({
+    connectorId: "tdlr_terminal_test",
+    failureReason: "Selector fix explicitly tied to artifact B",
+    proposedPatch: { patch: "v2" },
+    replayResults: { passed: 1, total: 1, allPassed: true, quarantinedArtifactId: "artifact-B" },
+    status: "promoted",
+  });
+
+  // Artifact A with capturedAt in the past (before audit was created)
+  const artifactA = {
+    id: "artifact-A",
+    capturedAt: "2020-01-01 00:00:00",
+  };
+
+  // Checking artifact A against audit B must return false despite audit.createdAt >= artifactA.capturedAt
+  const hasPromoA = await repo.hasPromotedRepairAudit("tdlr_terminal_test", artifactA);
+  assert.equal(hasPromoA, false, "Audit explicitly naming artifact-B must not approve artifact-A");
+
+  // Checking artifact B must return true
+  const artifactB = {
+    id: "artifact-B",
+    capturedAt: "2020-01-01 00:00:00",
+  };
+  const hasPromoB = await repo.hasPromotedRepairAudit("tdlr_terminal_test", artifactB);
+  assert.equal(hasPromoB, true, "Audit explicitly naming artifact-B must approve artifact-B");
+});
+
+test("ScraperRepository.ensureConnectorConfigs initializes connector configurations via typed Drizzle queries", async () => {
+  const db = createDatabase(":memory:");
+  const repo = new ScraperRepository(db);
+
+  await repo.ensureConnectorConfigs([
+    {
+      id: "test_connector_1",
+      sourceFamily: "tdlr_tabs",
+      manifest: { version: "1.0.0" },
+      invariants: { minCost: 0 },
+      lastStatus: "idle",
+    },
+  ]);
+
+  const config = await repo.getConnectorConfig("test_connector_1");
+  assert.ok(config);
+  assert.equal(config.id, "test_connector_1");
+  assert.equal(config.sourceFamily, "tdlr_tabs");
+  assert.equal(config.lastStatus, "idle");
+
+  // Idempotent: inserting duplicate does nothing
+  await repo.ensureConnectorConfigs([
+    {
+      id: "test_connector_1",
+      sourceFamily: "tdlr_tabs",
+    },
+  ]);
+  const config2 = await repo.getConnectorConfig("test_connector_1");
+  assert.equal(config2?.id, "test_connector_1");
+});
+
 

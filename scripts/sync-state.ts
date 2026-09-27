@@ -42,8 +42,19 @@ export async function hydrateStateFromR2(
   if (typeof r2Client.getObject === "function") {
     try {
       remoteObject = await r2Client.getObject({ Key: "gridlock.db" });
-    } catch {
-      remoteObject = null;
+    } catch (err: any) {
+      const isNotFound =
+        err?.name === "NoSuchKey" ||
+        err?.code === "NoSuchKey" ||
+        err?.status === 404 ||
+        err?.statusCode === 404 ||
+        err?.$metadata?.httpStatusCode === 404 ||
+        /404|NoSuchKey|NotFound/i.test(err?.message ?? "");
+      if (isNotFound) {
+        remoteObject = null;
+      } else {
+        throw err;
+      }
     }
   }
 
@@ -233,16 +244,14 @@ async function getR2Object(
   params: { Key: string }
 ): Promise<{ Body: Buffer } | null> {
   const url = `${config.baseBucketUrl}/${params.Key}`;
-  try {
-    const headers = signS3Request("GET", url, config.accessKeyId, config.secretAccessKey);
-    const res = await fetch(url, { method: "GET", headers });
-    if (res.status === 404 || !res.ok) return null;
-    const arrayBuffer = await res.arrayBuffer();
-    return { Body: Buffer.from(arrayBuffer) };
-  } catch (err: any) {
-    console.warn(`[R2 getObject failed] ${params.Key}:`, err.message);
-    return null;
+  const headers = signS3Request("GET", url, config.accessKeyId, config.secretAccessKey);
+  const res = await fetch(url, { method: "GET", headers });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`R2 getObject failed for ${params.Key}: HTTP ${res.status} ${res.statusText}`);
   }
+  const arrayBuffer = await res.arrayBuffer();
+  return { Body: Buffer.from(arrayBuffer) };
 }
 
 async function putR2Object(

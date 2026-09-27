@@ -9,7 +9,7 @@ export interface PipelineRunOptions {
   connectorId: string;
   sourceFamily: SourceFamily;
   extractor: () => Promise<RawExtractionResult>;
-  parser: (raw: string) => ObservationCandidate[];
+  parser: (raw: string | Buffer) => ObservationCandidate[];
   artifactStore?: ArtifactStore;
   db: DatabaseSync;
 }
@@ -41,7 +41,7 @@ async function handleExistingArtifactMatch(params: {
   existingArtifact: any;
   options: PipelineRunOptions;
   rawResult: RawExtractionResult;
-  contentStr: string;
+  contentStr: string | Buffer;
   sha256Hash: string;
   repo: ScraperRepository;
 }): Promise<PipelineRunResult> {
@@ -163,7 +163,7 @@ export async function runScraperPipeline(
       existingArtifact,
       options,
       rawResult,
-      contentStr,
+      contentStr: rawResult.content,
       sha256Hash,
       repo,
     });
@@ -173,7 +173,7 @@ export async function runScraperPipeline(
   // Validate pure invariants before database writes to prevent corrupted partial artifacts.
   let candidates: ObservationCandidate[];
   try {
-    candidates = options.parser(contentStr);
+    candidates = options.parser(rawResult.content);
   } catch (err: any) {
     const { artifactId } = await quarantineExtractionFailure({
       connectorId: options.connectorId,

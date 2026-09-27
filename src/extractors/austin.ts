@@ -4,14 +4,41 @@ import type { ExtractorOptions, RawExtractionResult } from "./types.js";
 
 const CONNECTOR_VERSION = "1.0.0";
 
+export interface AustinExtractorOptions extends ExtractorOptions {
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+}
+
+function getDefaultIncrementalWindow(): { startDate: string; endDate: string } {
+  const now = new Date();
+  const endDate = now.toISOString().slice(0, 10);
+  const past = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const startDate = past.toISOString().slice(0, 10);
+  return { startDate, endDate };
+}
+
 /**
  * Headless Playwright extractor for City of Austin building permits (Socrata Open Data).
  * Uses Playwright browser context and exponential backoff on HTTP 429 (ADR-0001).
+ * Applies incremental date bounds on live runs to avoid static page content-hash stalls.
  */
 export async function extractAustinPermits(
-  options: ExtractorOptions = {}
+  options: AustinExtractorOptions = {}
 ): Promise<RawExtractionResult> {
-  const targetUrl = options.url ?? buildSocrataUrl();
+  const defaultWindow = getDefaultIncrementalWindow();
+  const startDate =
+    options.startDate ?? process.env.AUSTIN_PERMITS_START_DATE ?? defaultWindow.startDate;
+  const endDate =
+    options.endDate ?? process.env.AUSTIN_PERMITS_END_DATE ?? defaultWindow.endDate;
+
+  const targetUrl =
+    options.url ??
+    buildSocrataUrl({
+      startDate,
+      endDate,
+      limit: options.limit,
+    });
   const browser = options.browser ?? (await chromium.launch({ headless: true }));
   const context = await browser.newContext();
   const page = await context.newPage();

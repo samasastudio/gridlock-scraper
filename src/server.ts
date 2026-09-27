@@ -9,7 +9,7 @@ import { ArtifactStore } from "./storage/artifact-store.js";
 import { createDatabase } from "./storage/db.js";
 
 export interface ScraperServer {
-  listen(port?: number): Promise<{ port: number; host: string }>;
+  listen(port?: number, host?: string): Promise<{ port: number; host: string }>;
   close(): Promise<void>;
   server: http.Server;
 }
@@ -22,7 +22,7 @@ export function createServer(options: CreateServerOptions = {}): ScraperServer {
   const db =
     options.db ??
     createDatabase(process.env.GRIDLOCK_DB_PATH ?? path.resolve(process.cwd(), "gridlock.db"));
-  ensureConnectorConfigs(db);
+  const initPromise = ensureConnectorConfigs(db);
 
   const store = new ArtifactStore(
     process.env.ARTIFACTS_DIR ?? path.resolve(process.cwd(), ".artifacts")
@@ -201,14 +201,17 @@ export function createServer(options: CreateServerOptions = {}): ScraperServer {
 
   return {
     server,
-    listen(port = 0): Promise<{ port: number; host: string }> {
-      return new Promise((resolve, reject) => {
-        server.listen(port, "127.0.0.1", () => {
-          const address = server.address() as AddressInfo;
-          resolve({ port: address.port, host: address.address });
-        });
-        server.once("error", reject);
-      });
+    listen(port = 0, host = "0.0.0.0"): Promise<{ port: number; host: string }> {
+      return initPromise.then(
+        () =>
+          new Promise((resolve, reject) => {
+            server.listen(port, host, () => {
+              const address = server.address() as AddressInfo;
+              resolve({ port: address.port, host: address.address });
+            });
+            server.once("error", reject);
+          })
+      );
     },
     close(): Promise<void> {
       return new Promise((resolve, reject) => {
@@ -221,10 +224,10 @@ export function createServer(options: CreateServerOptions = {}): ScraperServer {
   };
 }
 
-export async function startServer(port = 8080): Promise<ScraperServer> {
+export async function startServer(port = 8080, host = "0.0.0.0"): Promise<ScraperServer> {
   const app = createServer();
-  const addr = await app.listen(port);
-  console.log(`[Scraper Server] Listening on http://127.0.0.1:${addr.port}`);
+  const addr = await app.listen(port, host);
+  console.log(`[Scraper Server] Listening on http://${addr.host}:${addr.port}`);
   return app;
 }
 

@@ -14,7 +14,7 @@ import { parseTceqHtml } from "./parsers/tceq.js";
 import { parseTdlrHtml } from "./parsers/tdlr.js";
 import type { ObservationCandidate, SourceFamily } from "./schemas/common.js";
 import { ArtifactStore } from "./storage/artifact-store.js";
-import { createDatabase } from "./storage/db.js";
+import { createDatabase, ScraperRepository } from "./storage/db.js";
 
 export const EXIT_CODES = {
   SUCCESS: 0,
@@ -45,7 +45,7 @@ export interface ConnectorJobDefinition {
   connectorId: string;
   sourceFamily: SourceFamily;
   extractor: (options?: ExtractorOptions) => Promise<RawExtractionResult>;
-  parser: (raw: string) => ObservationCandidate[];
+  parser: (raw: string | Buffer) => ObservationCandidate[];
 }
 
 export const CONNECTOR_JOBS: Record<
@@ -150,13 +150,13 @@ export function resolveJobsToRun(source: ValidSource): ConnectorJobDefinition[] 
   return [job];
 }
 
-export function ensureConnectorConfigs(db: any): void {
-  for (const job of Object.values(CONNECTOR_JOBS)) {
-    db.prepare(`
-      INSERT OR IGNORE INTO connector_configs (id, source_family, manifest, invariants, last_status)
-      VALUES (?, ?, '{}', '{}', 'idle')
-    `).run(job.connectorId, job.sourceFamily);
-  }
+export async function ensureConnectorConfigs(db: any): Promise<void> {
+  const repo = db instanceof ScraperRepository ? db : new ScraperRepository(db);
+  const configs = Object.values(CONNECTOR_JOBS).map((job) => ({
+    id: job.connectorId,
+    sourceFamily: job.sourceFamily,
+  }));
+  await repo.ensureConnectorConfigs(configs);
 }
 
 /**
@@ -190,7 +190,7 @@ export async function main(
   let hadAnomaly = false;
 
   try {
-    ensureConnectorConfigs(db);
+    await ensureConnectorConfigs(db);
     const jobs = resolveJobsToRun(options.source);
 
     // NOTE (Architecture Rationale): Sequential iteration is mandatory here

@@ -1,5 +1,6 @@
 import type { ObservationCandidate } from "../schemas/common.js";
 import { validateErcotInvariants } from "../schemas/ercot.js";
+import { convertXlsxToCsv, isZipPayload } from "./xlsx.js";
 
 /**
  * Parses a single CSV line according to RFC 4180 rules, handling quotes and escaped quotes.
@@ -93,10 +94,24 @@ function mapCsvLineToObservations(
 }
 
 /**
- * Pure parser for ERCOT Generation Interconnection Queue CSV payloads.
+ * Pure parser for ERCOT Generation Interconnection Queue spreadsheet (.xlsx) payloads.
+ */
+export function parseErcotSpreadsheet(payload: Buffer | string): ObservationCandidate[] {
+  const csvContent = convertXlsxToCsv(payload);
+  return parseErcotCsv(csvContent);
+}
+
+/**
+ * Pure parser for ERCOT Generation Interconnection Queue CSV or XLSX payloads.
  * Zero browser or database dependencies.
  */
-export function parseErcotCsv(csvContent: string): ObservationCandidate[] {
+export function parseErcotCsv(input: string | Buffer): ObservationCandidate[] {
+  if (isZipPayload(input)) {
+    return parseErcotSpreadsheet(input);
+  }
+
+  const csvContent = Buffer.isBuffer(input) ? input.toString("utf8") : input;
+
   const lines = csvContent
     .split(/\r?\n/)
     .map((l) => l.trim())

@@ -403,9 +403,10 @@ export class ScraperRepository {
         }
       }
 
-      // Explicit binding to this quarantined artifact ID
-      if (replayResults?.quarantinedArtifactId === artifact.id) {
-        return true;
+      // Explicit binding to this quarantined artifact ID.
+      // If the audit names a specific quarantinedArtifactId, a mismatch is terminal.
+      if (replayResults?.quarantinedArtifactId) {
+        return replayResults.quarantinedArtifactId === artifact.id;
       }
 
       // Temporal binding: promoted audit must be at or after the artifact's quarantine timestamp
@@ -416,6 +417,29 @@ export class ScraperRepository {
       // If capturedAt is not available on artifact, accept any promoted audit for this connector
       return true;
     });
+  }
+
+  public async ensureConnectorConfigs(
+    configs: Array<{
+      id: string;
+      sourceFamily: string;
+      manifest?: Record<string, unknown>;
+      invariants?: Record<string, unknown>;
+      lastStatus?: "idle" | "ok" | "anomaly" | "repairing" | "error";
+    }>
+  ): Promise<void> {
+    for (const config of configs) {
+      await this.drizzle
+        .insert(schema.connectorConfigs)
+        .values({
+          id: config.id,
+          sourceFamily: config.sourceFamily,
+          manifest: config.manifest ?? {},
+          invariants: config.invariants ?? {},
+          lastStatus: config.lastStatus ?? "idle",
+        })
+        .onConflictDoNothing();
+    }
   }
 
   public async updateConnectorManifest(

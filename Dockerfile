@@ -30,6 +30,9 @@ RUN npm ci --omit=dev
 # Copy compiled application code
 COPY --from=builder /app/dist ./dist
 
+# Create writable state directories and assign ownership to pwuser before dropping privileges
+RUN mkdir -p /app/.artifacts && chown -R pwuser:pwuser /app
+
 # Run as unprivileged Playwright user
 USER pwuser
 

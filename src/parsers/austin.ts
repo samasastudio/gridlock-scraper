@@ -80,7 +80,8 @@ function mapRecordToObservations(raw: any): ObservationCandidate[] {
  * Pure parser for Austin Open Data (Socrata) building permits JSON.
  * Zero browser or database dependencies.
  */
-export function parseAustinPermitsJson(jsonContent: string): ObservationCandidate[] {
+export function parseAustinPermitsJson(raw: string | Buffer): ObservationCandidate[] {
+  const jsonContent = Buffer.isBuffer(raw) ? raw.toString("utf8") : raw;
   let records: any[];
   try {
     records = JSON.parse(jsonContent);

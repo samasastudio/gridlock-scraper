@@ -19,6 +19,7 @@ export interface ReplayEvaluationResult {
   total: number;
   allPassed: boolean;
   auditId: string;
+  details: SingleFixtureEvaluation[];
 }
 
 export interface SingleFixtureEvaluation {
@@ -146,5 +147,6 @@ export async function evaluateCandidatePatch(
     total: fixtures.length,
     allPassed,
     auditId,
+    details: evaluations,
   };
 }

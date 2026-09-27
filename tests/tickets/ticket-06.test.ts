@@ -48,6 +48,8 @@ test("Ticket 06 - Criteria 2 & 3: Replay sandbox evaluates candidate patch acros
   assert.equal(validResult.allPassed, true);
   assert.equal(validResult.passed, 1);
   assert.equal(validResult.total, 1);
+  assert.equal(validResult.details.length, 1);
+  assert.equal(validResult.details[0].passed, true);
 
   // Broken patch fails
   const brokenResult = await evaluateCandidatePatch(
@@ -66,6 +68,9 @@ test("Ticket 06 - Criteria 2 & 3: Replay sandbox evaluates candidate patch acros
 
   assert.equal(brokenResult.allPassed, false);
   assert.equal(brokenResult.passed, 0);
+  assert.equal(brokenResult.details.length, 1);
+  assert.equal(brokenResult.details[0].passed, false);
+  assert.equal(brokenResult.details[0].failureReason, "Empty observations produced");
 });
 
 test("Ticket 06 - Criteria 4: Only promotes patch to connector status ok if replay pass rate is 100%", async () => {

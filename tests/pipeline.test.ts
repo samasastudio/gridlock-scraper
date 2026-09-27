@@ -137,6 +137,9 @@ test("Self-healing replay harness verifies candidate patch against fixtures", as
   assert.equal(evalResult.passed, 1);
   assert.equal(evalResult.total, 1);
   assert.equal(evalResult.allPassed, true);
+  assert.equal(evalResult.details.length, 1);
+  assert.equal(evalResult.details[0].fixtureId, "fix-1");
+  assert.equal(evalResult.details[0].passed, true);
 
   const configRow = db
     .prepare("SELECT last_status FROM connector_configs WHERE id = 'test_repair'")

@@ -33,46 +33,66 @@ export function buildSocrataUrl(params: SocrataUrlParams = {}): string {
   return `${baseUrl}${query}${limitQuery}`;
 }
 
+function isRateLimited(result: unknown): boolean {
+  return (
+    Boolean(result) &&
+    typeof result === "object" &&
+    "status" in result! &&
+    (result as { status: unknown }).status === 429
+  );
+}
+
+function is429Error(err: any): boolean {
+  return (
+    err?.status === 429 ||
+    err?.statusCode === 429 ||
+    /429|rate limit/i.test(err?.message ?? "")
+  );
+}
+
+function computeBackoffDelay(attempt: number, baseDelayMs: number, maxDelayMs: number): number {
+  const jitter = Math.random() * 10;
+  return Math.min(baseDelayMs * 2 ** attempt + jitter, maxDelayMs);
+}
+
 /**
  * Executes a network fetch function with exponential backoff and jitter on HTTP 429 (ADR-0001).
+ *
+ * NOTE (Architecture Rationale per Invariant #19): Sequential imperative iteration is
+ * intentionally chosen over functional array methods (e.g., Array.prototype.reduce) or
+ * async recursion for agency rate limiting. A linear loop:
+ * 1. Guarantees immediate short-circuit return upon success without allocating or executing
+ *    trailing array callbacks.
+ * 2. Avoids synthetic promise rejection sentinels required to bootstrap functional reduce chains.
+ * 3. Enforces clean, debuggable call stack frames with linear time budgeting and precise setTimeout delays.
  */
 export async function fetchWithBackoff<T>(
   fetchFn: () => Promise<T>,
   options: BackoffOptions = {}
 ): Promise<T> {
-  const maxRetries = options.maxRetries ?? 3;
+  const maxRetries = Math.max(0, options.maxRetries ?? 3);
   const baseDelayMs = options.baseDelayMs ?? 100;
   const maxDelayMs = options.maxDelayMs ?? 5000;
 
-  let attempt = 0;
-  while (true) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const result = await fetchFn();
-      if (
-        result &&
-        typeof result === "object" &&
-        "status" in result &&
-        (result as any).status === 429
-      ) {
+      if (isRateLimited(result)) {
         const err: any = new Error("HTTP 429 Rate Limit Exceeded");
         err.status = 429;
         throw err;
       }
       return result;
     } catch (err: any) {
-      attempt++;
-      const is429 =
-        err?.status === 429 ||
-        err?.statusCode === 429 ||
-        /429|rate limit/i.test(err?.message ?? "");
-
-      if (attempt >= maxRetries || !is429) {
+      const isLastAttempt = attempt >= maxRetries;
+      if (isLastAttempt || !is429Error(err)) {
         throw err;
       }
 
-      const jitter = Math.random() * 10;
-      const delay = Math.min(baseDelayMs * 2 ** (attempt - 1) + jitter, maxDelayMs);
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      const delayMs = computeBackoffDelay(attempt, baseDelayMs, maxDelayMs);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
+
+  throw new Error(`fetchWithBackoff exhausted all ${maxRetries} retry attempts.`);
 }

@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { Readable } from "node:stream";
+import { buffer as streamToBuffer } from "node:stream/consumers";
 import { chromium } from "playwright";
 import type { ExtractorOptions, RawExtractionResult } from "./types.js";
 
@@ -55,11 +55,7 @@ export async function extractErcotQueue(
     let buffer: Buffer;
     if (typeof download.createReadStream === "function") {
       const stream = await download.createReadStream();
-      const chunks: Buffer[] = [];
-      for await (const chunk of stream) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
-      buffer = Buffer.concat(chunks);
+      buffer = await streamToBuffer(stream);
     } else if (typeof download.path === "function") {
       const filePath = await download.path();
       buffer = fs.readFileSync(filePath);

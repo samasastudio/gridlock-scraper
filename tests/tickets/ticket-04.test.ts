@@ -80,4 +80,30 @@ test("Ticket 04 - Criteria 3: Socrata query builder constructs incremental date 
   const result = await connectorModule.fetchWithBackoff(simulatedFetchWith429, { maxRetries: 3, baseDelayMs: 10 });
   assert.equal(result.status, 200);
   assert.equal(attempts, 3, "Fetch must retry upon encountering HTTP 429");
+
+  // Verify maxRetries: 0 executes the initial fetch without subsequent retries
+  let zeroRetryAttempts = 0;
+  const zeroRetryFetch = async () => {
+    zeroRetryAttempts++;
+    return { ok: true, count: 42 };
+  };
+  const zeroRetryResult = await connectorModule.fetchWithBackoff(zeroRetryFetch, { maxRetries: 0 });
+  assert.equal(zeroRetryAttempts, 1, "Must execute initial attempt even when maxRetries is 0");
+  assert.deepEqual(zeroRetryResult, { ok: true, count: 42 });
+
+  let zeroRetryErrorAttempts = 0;
+  const zeroRetryErrorFetch = async () => {
+    zeroRetryErrorAttempts++;
+    const err: any = new Error("Direct network failure");
+    err.status = 500;
+    throw err;
+  };
+  await assert.rejects(
+    async () => {
+      await connectorModule.fetchWithBackoff(zeroRetryErrorFetch, { maxRetries: 0 });
+    },
+    /Direct network failure/,
+    "Must throw immediate error on attempt 1 when maxRetries is 0"
+  );
+  assert.equal(zeroRetryErrorAttempts, 1, "Must not retry on error when maxRetries is 0");
 });

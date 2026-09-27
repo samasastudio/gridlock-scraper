@@ -207,3 +207,28 @@ test("Municipal pure parser rejects HTML missing case identifier or jurisdiction
     parseMunicipalAgenda(brokenAgendaHtml);
   });
 });
+
+test("Municipal pure parser throws validation error when any agenda item in multi-item payload lacks identifier", () => {
+  const mixedAgendaHtml = `
+    <div class="agenda-item">
+      <div class="action-identifier">C14-2024-0099</div>
+      <div class="jurisdiction">Austin</div>
+      <div class="action-title">Valid Rezoning Case</div>
+      <div class="action-type">zoning</div>
+      <div class="action-status">approved</div>
+    </div>
+    <div class="agenda-item">
+      <div class="jurisdiction">Austin</div>
+      <div class="action-title">Malformed Rezoning Case</div>
+      <div class="action-type">zoning</div>
+      <div class="action-status">approved</div>
+    </div>
+  `;
+  assert.throws(
+    () => {
+      parseMunicipalAgenda(mixedAgendaHtml);
+    },
+    /actionIdentifier/i,
+    "Malformed item in multi-item payload must throw schema error rather than being silently filtered"
+  );
+});

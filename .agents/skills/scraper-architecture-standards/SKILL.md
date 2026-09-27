@@ -31,6 +31,9 @@ Comprehensive architectural, organizational, and code standards for `gridlock-sc
 | **Execution Integrity** | CLI and container entrypoints must wire real pipeline runners and return deterministic exit codes (0, 1, 2). | AGENTS.md |
 | **Agent Validation Gates** | Backlog tickets validated via dedicated `tests/tickets/ticket-XX.test.ts` suites; `npm run test:ticket <id>` acts as the definitive Definition of Done. | ADR-0006, ADR-0008 |
 | **Functional Transforms & Flat Control Flow** | Prefer pure array methods (`flatMap`, `map`) and early returns over mutable loop accumulators and deep nesting. Necessary loops must have documented architectural rationale. | Code Standard |
+| **No Silent Candidate Filtering** | Strategy dispatch selects format by DOM presence, not candidate validity; filtering malformed items before validation is banned to prevent silent data loss. | ADR-0004 |
+| **Zero-Retry Execution** | Retry utilities must treat `maxRetries` as retries after attempt 0, guaranteeing the initial network request runs when `maxRetries: 0`. | ADR-0001 |
+| **Public Replay Diagnostics** | Replay verification harnesses must expose structured per-fixture failure records (`details`) directly on return interfaces. | ADR-0004 |
 
 ---
 
@@ -112,6 +115,9 @@ Review every scraper PR against this checklist:
 - [ ] **Flat Control Flow**: Are nested `if/else` ladders avoided in favor of early returns or strategy arrays?
 - [ ] **Documented Loop Rationale**: If an imperative loop, sequential iteration, or stateful scanner is used, does an inline comment explain why (e.g., SQLite write transaction locks, agency rate limits, RFC 4180 parsing)?
 - [ ] **Structured Replay Diagnostics**: Does the replay test harness return structured failure records per fixture rather than swallowing errors in blanket catch blocks?
+- [ ] **No Silent Candidate Filtering**: Does strategy dispatch avoid dropping unparseable or incomplete elements with `.filter()`, ensuring all discovered records reach domain validation?
+- [ ] **Zero-Retry Execution**: Does rate limiting / backoff retry logic execute the initial call when `maxRetries: 0` and immediately propagate errors without retries?
+- [ ] **Public Replay Diagnostics**: Does `evaluateCandidatePatch` return structured per-fixture failure records in its return object and type contract?
 - [ ] **Commit Message**: Does commit conform to Conventional Commits (`feat:`, `fix:`, `chore:`, etc.)?
 
 ---
@@ -136,3 +142,6 @@ Review every scraper PR against this checklist:
 16. **Mutable Parsing Accumulators**: Instantiating empty arrays and pushing observations inside `for` loops instead of pure `flatMap(mapRecordToObservations)`.
 17. **Undocumented Imperative Loops**: Using `for` or `while` loops for sequential operations without inline comments explaining the operational necessity (e.g. rate-limiting, transaction locks).
 18. **Swallowed Replay Errors**: Using `for..continue` with a simple numeric counter (`passed++`) that discards why historical fixtures or candidate patches failed.
+19. **Silent Candidate Filtering**: Using `.filter((c) => c.id.length > 0)` to discard unparseable items in multi-item strategy parsers, which conceals selector drift and records false healthy ingestion.
+20. **Pre-Emptive Retry Loop Exhaustion**: Bounding retry loops by `attempt < maxRetries` so that `maxRetries: 0` terminates immediately without executing the initial network request.
+21. **Buried Replay Diagnostics**: Computing structured per-fixture failure diagnostics but only persisting them in DB audit payloads, omitting them from the public `ReplayEvaluationResult` interface.

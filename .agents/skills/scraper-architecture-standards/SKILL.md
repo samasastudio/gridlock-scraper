@@ -38,6 +38,10 @@ Comprehensive architectural, organizational, and code standards for `gridlock-sc
 | **Fail-Closed State Hydration** | Remote database sync must only treat 404/`NoSuchKey` as empty store; all other errors must abort to prevent remote state wiping. | ADR-0003 |
 | **Binary Buffer Integrity** | Pipeline runners must preserve raw `Buffer` payloads for non-text formats without early UTF-8 string conversion. | ADR-0001 |
 | **Container Ingress & Permissions** | Containers must bind `0.0.0.0` and pre-create/chown writable dirs (`/app/.artifacts`) before dropping to non-root users. | Operational |
+| **Spreadsheet MIME Precedence** | MIME extension derivation must test OpenXML/Excel tokens before generic XML/HTML. | ADR-0001 |
+| **Hydration-Gated Publishing** | Post-sync remote state publishing must strictly gate on successful pre-sync state hydration. | ADR-0003 |
+| **Fail-Fast Sync Credentials** | Remote synchronization utilities must throw fatal errors on missing credentials rather than mock no-op runs. | Operational |
+| **Replay Binary Preservation** | Replay verification harnesses must accept `string | Buffer` and preserve raw binary buffers without `.toString("utf8")`. | ADR-0004 |
 
 ---
 
@@ -126,6 +130,10 @@ Review every scraper PR against this checklist:
 - [ ] **Fail-Closed Hydration**: Does S3/R2 state sync isolate 404 / `NoSuchKey` and rethrow all network, auth, or 5xx errors?
 - [ ] **Binary Buffer Preservation**: Does the runner pass raw `Buffer` instances for binary spreadsheets without converting them to strings first?
 - [ ] **Container User Permissions**: Does the Dockerfile create and `chown` `/app/.artifacts` before `USER pwuser`, and does the server bind to `0.0.0.0`?
+- [ ] **Spreadsheet MIME Precedence**: Does extension derivation check spreadsheet tokens (`spreadsheetml`, `xlsx`, `ms-excel`, `xls`) before generic XML?
+- [ ] **Hydration-Gated Publishing**: Is post-sync publish gated on `steps.sync-hydrate.outcome == 'success'` rather than unconditional `always()`?
+- [ ] **Fail-Fast Sync Credentials**: Does `createR2ClientFromEnv` throw fatal errors when remote credentials are not configured?
+- [ ] **Replay Binary Preservation**: Does `evaluateCandidatePatch` accept `string | Buffer` and pass raw binary buffers without `.toString("utf8")`?
 - [ ] **Commit Message**: Does commit conform to Conventional Commits (`feat:`, `fix:`, `chore:`, etc.)?
 
 ---
@@ -157,3 +165,7 @@ Review every scraper PR against this checklist:
 23. **Fail-Open Remote Hydration**: Catching all errors indiscriminately in remote DB sync and treating network/auth failures as empty remote storage.
 24. **Early String Conversion of Binaries**: Invoking `.toString("utf8")` on raw binary payloads before format detection and decompression.
 25. **Privilege-Dropping Permission Crashes**: Switching to non-root `USER` without pre-creating and owning writable artifact and database directories.
+26. **MIME Masking by Generic XML/HTML**: Deriving file extensions without checking spreadsheet tokens (`spreadsheetml`, `xlsx`, `ms-excel`, `xls`) first, causing binary archives to be saved as `.xml` or `.html`.
+27. **Publishing After Failed Hydration**: Running post-sync state publishing under unconditional `always()` after a remote state read failure, overwriting production remote databases with empty schemas.
+28. **Silent Missing Sync Credentials**: Returning dummy no-op clients or synthesizing empty databases on publish when remote credentials are missing.
+29. **Replay UTF-8 Binary Mutilation**: Passing binary fixtures (like `.xlsx`) through `.toString("utf8")` in replay harnesses, destroying binary zip headers before candidate parsers run.

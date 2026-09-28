@@ -26,6 +26,8 @@ export interface PipelineRunResult {
 
 function getExtensionForContentType(contentType: string): string {
   const ct = contentType.toLowerCase();
+  if (ct.includes("spreadsheetml") || ct.includes("xlsx")) return "xlsx";
+  if (ct.includes("ms-excel") || ct.includes("xls")) return "xls";
   if (ct.includes("csv")) return "csv";
   if (ct.includes("json")) return "json";
   if (ct.includes("pdf")) return "pdf";

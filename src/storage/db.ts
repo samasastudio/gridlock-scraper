@@ -454,4 +454,63 @@ export class ScraperRepository {
       })
       .where(eq(schema.connectorConfigs.id, id));
   }
+
+  public async getArtifactRunStats(): Promise<{
+    totalRuns: number;
+    quarantinedRuns: number;
+    successfulRuns: number;
+  }> {
+    const [stats] = await this.drizzle
+      .select({
+        total: sql<number>`count(*)`,
+        quarantined: sql<number>`coalesce(sum(case when ${schema.sourceArtifacts.connectorVersion} = 'quarantine' then 1 else 0 end), 0)`,
+      })
+      .from(schema.sourceArtifacts)
+      .all();
+
+    const totalRuns = Number(stats?.total ?? 0);
+    const quarantinedRuns = Number(stats?.quarantined ?? 0);
+    return {
+      totalRuns,
+      quarantinedRuns,
+      successfulRuns: Math.max(0, totalRuns - quarantinedRuns),
+    };
+  }
+
+  public async getAllConnectorConfigs(): Promise<ConnectorConfig[]> {
+    return await this.drizzle.select().from(schema.connectorConfigs).all();
+  }
+
+  public async getConnectorTelemetryStats(): Promise<{
+    connectorsCount: number;
+    activeAnomalies: number;
+  }> {
+    const [counts] = await this.drizzle
+      .select({
+        total: sql<number>`count(*)`,
+        anomalies: sql<number>`coalesce(sum(case when ${schema.connectorConfigs.lastStatus} = 'anomaly' then 1 else 0 end), 0)`,
+      })
+      .from(schema.connectorConfigs)
+      .all();
+
+    return {
+      connectorsCount: Number(counts?.total ?? 0),
+      activeAnomalies: Number(counts?.anomalies ?? 0),
+    };
+  }
+
+  public async getRecentRepairAudits(
+    limit = 10
+  ): Promise<Array<{ id: string; connectorId: string; status: string }>> {
+    return await this.drizzle
+      .select({
+        id: schema.repairAudits.id,
+        connectorId: schema.repairAudits.connectorId,
+        status: schema.repairAudits.status,
+      })
+      .from(schema.repairAudits)
+      .orderBy(sql`${schema.repairAudits.createdAt} desc`)
+      .limit(limit)
+      .all();
+  }
 }

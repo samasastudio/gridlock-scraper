@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { DatabaseSync } from "node:sqlite";
+import { ScraperRepository } from "../storage/db.js";
 
 export interface TelemetryReport {
   uptimeSeconds: number;
@@ -15,37 +16,23 @@ export interface TelemetryReport {
   }>;
 }
 
-export function handleHealthTelemetry(
+export async function handleHealthTelemetry(
   _req: IncomingMessage,
   res: ServerResponse,
-  db?: DatabaseSync
-): void {
+  dbOrRepo?: DatabaseSync | ScraperRepository
+): Promise<void> {
   let connectorsCount = 5;
   let activeAnomalies = 0;
   let audits: Array<{ id: string; connectorId: string; status: string }> = [];
 
-  if (db) {
+  if (dbOrRepo) {
     try {
-      const countRow = db.prepare("SELECT count(*) as c FROM connector_configs").get() as any;
-      if (countRow && typeof countRow.c === "number") {
-        connectorsCount = countRow.c;
-      }
-
-      const anomalyRow = db
-        .prepare("SELECT count(*) as a FROM connector_configs WHERE last_status = 'anomaly'")
-        .get() as any;
-      if (anomalyRow && typeof anomalyRow.a === "number") {
-        activeAnomalies = anomalyRow.a;
-      }
-
-      const auditRows = db
-        .prepare(
-          "SELECT id, connector_id as connectorId, status FROM repair_audits ORDER BY created_at DESC LIMIT 10"
-        )
-        .all() as any[];
-      if (Array.isArray(auditRows)) {
-        audits = auditRows;
-      }
+      const repo =
+        dbOrRepo instanceof ScraperRepository ? dbOrRepo : new ScraperRepository(dbOrRepo);
+      const stats = await repo.getConnectorTelemetryStats();
+      connectorsCount = stats.connectorsCount;
+      activeAnomalies = stats.activeAnomalies;
+      audits = await repo.getRecentRepairAudits(10);
     } catch {
       // Graceful fallback if tables are not yet queried
     }

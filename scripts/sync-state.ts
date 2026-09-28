@@ -326,12 +326,9 @@ export function createR2ClientFromEnv(): R2ClientInterface {
   const bucket = process.env.CLOUDFLARE_R2_BUCKET ?? "gridlock";
 
   if (!endpoint || !accessKeyId || !secretAccessKey) {
-    return {
-      putObject: async () => ({}),
-      getObject: async () => null,
-      copyObject: async () => ({}),
-      deleteObject: async () => ({}),
-    };
+    throw new Error(
+      "Missing required Cloudflare R2 credentials (CLOUDFLARE_R2_ENDPOINT, CLOUDFLARE_R2_ACCESS_KEY_ID, CLOUDFLARE_R2_SECRET_ACCESS_KEY)"
+    );
   }
 
   const cleanEndpoint = endpoint.replace(/\/+$/, "");
@@ -363,36 +360,38 @@ if (scriptPath.endsWith("sync-state.ts") || scriptPath.endsWith("sync-state.js")
   const targetDbPath = process.env.GRIDLOCK_DB_PATH ?? path.resolve(process.cwd(), "gridlock.db");
   const artifactsDir = process.env.ARTIFACTS_DIR ?? path.resolve(process.cwd(), ".artifacts");
 
-  const r2Client = createR2ClientFromEnv();
+  try {
+    const r2Client = createR2ClientFromEnv();
 
-  if (isHydrate) {
-    hydrateStateFromR2({ r2Client, targetDbPath })
-      .then((res) => {
-        console.log(
-          `[sync-state] State hydration complete. Hydrated from remote: ${res.hydratedFromRemote}`
-        );
-        process.exit(0);
-      })
-      .catch((err) => {
-        console.error(`[sync-state] State hydration failed: ${err.message}`);
-        process.exit(1);
-      });
-  } else if (isPublish) {
-    if (!fs.existsSync(targetDbPath)) {
-      console.log(
-        `[sync-state] Target DB does not exist at ${targetDbPath}, creating schema before publish...`
-      );
-      createDatabase(targetDbPath).close();
+    if (isHydrate) {
+      hydrateStateFromR2({ r2Client, targetDbPath })
+        .then((res) => {
+          console.log(
+            `[sync-state] State hydration complete. Hydrated from remote: ${res.hydratedFromRemote}`
+          );
+          process.exit(0);
+        })
+        .catch((err) => {
+          console.error(`[sync-state] State hydration failed: ${err.message}`);
+          process.exit(1);
+        });
+    } else if (isPublish) {
+      if (!fs.existsSync(targetDbPath)) {
+        throw new Error(`Target DB does not exist at ${targetDbPath} for publish`);
+      }
+      publishStateToR2({ r2Client, localDbPath: targetDbPath, artifactsDir })
+        .then(() => syncArtifactBlobsToR2({ r2Client, artifactsDir }))
+        .then((res) => {
+          console.log(`[sync-state] State publish complete. Synced ${res.syncedCount} blobs.`);
+          process.exit(0);
+        })
+        .catch((err) => {
+          console.error(`[sync-state] State publish failed: ${err.message}`);
+          process.exit(1);
+        });
     }
-    publishStateToR2({ r2Client, localDbPath: targetDbPath, artifactsDir })
-      .then(() => syncArtifactBlobsToR2({ r2Client, artifactsDir }))
-      .then((res) => {
-        console.log(`[sync-state] State publish complete. Synced ${res.syncedCount} blobs.`);
-        process.exit(0);
-      })
-      .catch((err) => {
-        console.error(`[sync-state] State publish failed: ${err.message}`);
-        process.exit(1);
-      });
+  } catch (err: any) {
+    console.error(`[sync-state] Execution failed: ${err.message}`);
+    process.exit(1);
   }
 }

@@ -582,4 +582,90 @@ test("ScraperRepository.ensureConnectorConfigs initializes connector configurati
   assert.equal(config2?.id, "test_connector_1");
 });
 
+test("ScraperRepository status and telemetry aggregation methods return typed stats", async () => {
+  const db = createDatabase(":memory:");
+  const repo = new ScraperRepository(db);
+
+  await repo.ensureConnectorConfigs([
+    { id: "c1", sourceFamily: "tdlr_tabs", lastStatus: "ok" },
+    { id: "c2", sourceFamily: "ercot_queue", lastStatus: "anomaly" },
+  ]);
+
+  const telemetry = await repo.getConnectorTelemetryStats();
+  assert.equal(telemetry.connectorsCount, 2);
+  assert.equal(telemetry.activeAnomalies, 1);
+
+  const configs = await repo.getAllConnectorConfigs();
+  assert.equal(configs.length, 2);
+
+  const runStats = await repo.getArtifactRunStats();
+  assert.equal(runStats.totalRuns, 0);
+  assert.equal(runStats.quarantinedRuns, 0);
+  assert.equal(runStats.successfulRuns, 0);
+
+  const audits = await repo.getRecentRepairAudits();
+  assert.equal(audits.length, 0);
+});
+
+test("evaluateCandidatePatch preserves raw binary buffer without UTF-8 string conversion", async () => {
+  const db = createDatabase(":memory:");
+  const repo = new ScraperRepository(db);
+  await repo.ensureConnectorConfigs([
+    { id: "test_binary_connector", sourceFamily: "ercot_queue" },
+  ]);
+
+  const binaryPayload = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0xff, 0xfe, 0x80, 0x90]);
+
+  let receivedType: string = "";
+  let receivedBuffer: Buffer | null = null;
+
+  const result = await evaluateCandidatePatch(
+    "test_binary_connector",
+    { version: "1.0.1" },
+    (content: string | Buffer) => {
+      receivedType = Buffer.isBuffer(content) ? "buffer" : typeof content;
+      if (Buffer.isBuffer(content)) receivedBuffer = content;
+      return [
+        {
+          subjectType: "facility",
+          subjectId: "fac-binary-1",
+          sourceArtifactId: "art-binary-1",
+          confidence: 1.0,
+          resolutionMethod: "deterministic",
+          data: { name: "Test Facility" },
+        },
+      ];
+    },
+    [
+      {
+        id: "fixture_binary",
+        content: binaryPayload,
+        expectedMinCount: 1,
+        expectedSubjectIds: ["fac-binary-1"],
+      },
+    ],
+    db
+  );
+
+  assert.equal(receivedType, "buffer", "evaluateCandidatePatch must pass Buffer directly to parser");
+  assert.deepEqual(receivedBuffer, binaryPayload, "Buffer bytes must be preserved exactly");
+  assert.equal(result.allPassed, true);
+});
+
+test("createR2ClientFromEnv throws when credentials are not configured", async () => {
+  const { createR2ClientFromEnv } = await import("../scripts/sync-state.js");
+  const origEndpoint = process.env.CLOUDFLARE_R2_ENDPOINT;
+  delete process.env.CLOUDFLARE_R2_ENDPOINT;
+
+  try {
+    assert.throws(
+      () => createR2ClientFromEnv(),
+      /Missing required Cloudflare R2 credentials/,
+      "Must throw error on absent R2 credentials"
+    );
+  } finally {
+    if (origEndpoint) process.env.CLOUDFLARE_R2_ENDPOINT = origEndpoint;
+  }
+});
+
 

@@ -6,7 +6,7 @@ import { CONNECTOR_JOBS, ensureConnectorConfigs, resolveJobsToRun } from "./cli.
 import { runScraperPipeline } from "./jobs/runner.js";
 import { handleHealthTelemetry } from "./routes/health.js";
 import { ArtifactStore } from "./storage/artifact-store.js";
-import { createDatabase } from "./storage/db.js";
+import { createDatabase, ScraperRepository } from "./storage/db.js";
 
 export interface ScraperServer {
   listen(port?: number, host?: string): Promise<{ port: number; host: string }>;
@@ -23,6 +23,7 @@ export function createServer(options: CreateServerOptions = {}): ScraperServer {
     options.db ??
     createDatabase(process.env.GRIDLOCK_DB_PATH ?? path.resolve(process.cwd(), "gridlock.db"));
   const initPromise = ensureConnectorConfigs(db);
+  const repo = new ScraperRepository(db);
 
   const store = new ArtifactStore(
     process.env.ARTIFACTS_DIR ?? path.resolve(process.cwd(), ".artifacts")
@@ -127,9 +128,11 @@ export function createServer(options: CreateServerOptions = {}): ScraperServer {
 
     // Route: GET /api/ingest/status
     if (req.method === "GET" && pathname === "/api/ingest/status") {
-      let totalRuns = 0;
-      let quarantinedRuns = 0;
-      let successfulRuns = 0;
+      let metrics = {
+        totalRuns: 0,
+        successfulRuns: 0,
+        quarantinedRuns: 0,
+      };
       const connectorsStatus: Record<string, string> = {
         tdlr_tabs: "ok",
         ercot_queue: "ok",
@@ -139,32 +142,16 @@ export function createServer(options: CreateServerOptions = {}): ScraperServer {
       };
 
       try {
-        const stats = db
-          .prepare(
-            `SELECT 
-              count(*) as total,
-              sum(CASE WHEN connector_version = 'quarantine' THEN 1 ELSE 0 END) as quarantined
-            FROM source_artifacts`
-          )
-          .get() as any;
-
-        if (stats) {
-          totalRuns = Number(stats.total ?? 0);
-          quarantinedRuns = Number(stats.quarantined ?? 0);
-          successfulRuns = Math.max(0, totalRuns - quarantinedRuns);
-        }
-
-        const configRows = db
-          .prepare("SELECT id, source_family, last_status FROM connector_configs")
-          .all() as any[];
+        metrics = await repo.getArtifactRunStats();
+        const configRows = await repo.getAllConnectorConfigs();
 
         if (Array.isArray(configRows)) {
           Object.assign(
             connectorsStatus,
             Object.fromEntries(
               configRows.map((row) => [
-                row.source_family ?? row.id,
-                row.last_status === "idle" ? "ok" : row.last_status,
+                row.sourceFamily ?? row.id,
+                row.lastStatus === "idle" ? "ok" : row.lastStatus,
               ])
             )
           );
@@ -177,11 +164,7 @@ export function createServer(options: CreateServerOptions = {}): ScraperServer {
       res.end(
         JSON.stringify({
           status: "ok",
-          metrics: {
-            totalRuns,
-            successfulRuns,
-            quarantinedRuns,
-          },
+          metrics,
           connectors: connectorsStatus,
         })
       );
@@ -190,7 +173,7 @@ export function createServer(options: CreateServerOptions = {}): ScraperServer {
 
     // Route: GET /api/source-health/telemetry
     if (req.method === "GET" && pathname === "/api/source-health/telemetry") {
-      handleHealthTelemetry(req, res, db);
+      await handleHealthTelemetry(req, res, repo);
       return;
     }
 

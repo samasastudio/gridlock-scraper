@@ -42,13 +42,10 @@ function hasSemanticOracle(fixture: ReplayFixture): boolean {
  */
 function evaluateSingleFixture(
   fixture: ReplayFixture,
-  candidateParser: (content: string) => ObservationCandidate[]
+  candidateParser: (content: string | Buffer) => ObservationCandidate[]
 ): SingleFixtureEvaluation {
   try {
-    const contentStr = Buffer.isBuffer(fixture.content)
-      ? fixture.content.toString("utf8")
-      : fixture.content;
-    const obs = candidateParser(contentStr);
+    const obs = candidateParser(fixture.content);
 
     if (!obs || obs.length === 0) {
       return {
@@ -99,7 +96,7 @@ function evaluateSingleFixture(
 export async function evaluateCandidatePatch(
   connectorId: string,
   proposedPatchDescription: Record<string, unknown>,
-  candidateParser: (content: string) => ObservationCandidate[],
+  candidateParser: (content: string | Buffer) => ObservationCandidate[],
   fixtures: ReplayFixture[],
   db: DatabaseSync,
   options?: { quarantinedArtifactId?: string }

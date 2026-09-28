@@ -9,6 +9,7 @@
 - **Active Skills**:
   - `scraper-architecture-standards`: Enforces architecture, layer separation, data integrity, and review standards.
   - `agent-validation-gates`: Enforces ticket acceptance harness, falsifiable RED gates, and verification commands (`npm run test:ticket <id>`, `npm run test:tickets:audit`).
+  - `gridlock-code-review`: Dual-mode code review engine for inbound review comment triage (4-part format, no SVG badges) and outbound pre-PR invariant auditing.
 
 ---
 
@@ -50,6 +51,10 @@
 23. **Fail-Closed Remote State Hydration**: State synchronization utilities (S3/R2) must strictly isolate HTTP 404 / `NoSuchKey` for empty-store initialization. All network timeouts, authentication rejections, and 5xx errors must fail closed and terminate execution immediately, preventing an unpopulated local database from overwriting remote production state.
 24. **Binary Buffer Preservation**: Pipeline runners and extractors handling binary payloads (e.g. `.xlsx`, `.pdf`, `.zip`) must preserve raw `Buffer` bitstreams without intermediate `toString("utf8")` conversion, using in-memory decompressors prior to tabular invariant validation.
 25. **Container Ingress & Privilege Demotion**: Containerized HTTP servers must bind to `0.0.0.0` by default. Dockerfiles dropping to non-root users (`USER pwuser`) must pre-create all writable data directories (`/app/.artifacts`, database mounts) and transfer ownership (`chown -R`) prior to the `USER` instruction to prevent runtime `EACCES` crashes.
+26. **Spreadsheet MIME Precedence**: MIME-type extension derivation must check OpenXML and Excel tokens (`spreadsheetml`, `xlsx`, `ms-excel`, `xls`) prior to generic XML/HTML checks to prevent binary spreadsheets from being mislabeled.
+27. **Hydration-Gated State Publishing**: Workflow pipelines that publish state to persistent remote storage must strictly gate execution on successful pre-run hydration (`steps.sync-hydrate.outcome == 'success'`). Publishing under `always()` after a hydration failure is strictly prohibited.
+28. **Fail-Fast Remote Sync Credentials**: State synchronization utilities and client factories (`createR2ClientFromEnv`) must throw fatal errors on absent or empty remote credentials (`CLOUDFLARE_R2_*`); returning mock no-op clients or synthesizing empty databases on publish is strictly prohibited.
+29. **Replay Binary Preservation**: Self-healing replay verification harnesses (`evaluateCandidatePatch`, `evaluateSingleFixture`) must accept `string | Buffer` and pass binary fixtures directly to candidate parsers without `.toString("utf8")`.
 
 ---
 

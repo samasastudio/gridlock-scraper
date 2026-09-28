@@ -26,6 +26,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Pre-sync state hydration from R2
+        id: sync-hydrate
         env:
           CLOUDFLARE_R2_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
@@ -53,7 +54,7 @@ jobs:
         run: npx tsx scripts/notify-anomaly.ts --reason="Scheduled ingestion sweep quarantined anomaly (exit code 2)"
 
       - name: Post-sync state publish to R2
-        if: always()
+        if: (!cancelled()) && steps.sync-hydrate.outcome == 'success'
         env:
           CLOUDFLARE_R2_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
           CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}

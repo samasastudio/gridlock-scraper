@@ -34,6 +34,10 @@ Comprehensive architectural, organizational, and code standards for `gridlock-sc
 | **No Silent Candidate Filtering** | Strategy dispatch selects format by DOM presence, not candidate validity; filtering malformed items before validation is banned to prevent silent data loss. | ADR-0004 |
 | **Zero-Retry Execution** | Retry utilities must treat `maxRetries` as retries after attempt 0, guaranteeing the initial network request runs when `maxRetries: 0`. | ADR-0001 |
 | **Public Replay Diagnostics** | Replay verification harnesses must expose structured per-fixture failure records (`details`) directly on return interfaces. | ADR-0004 |
+| **Terminal Artifact Binding** | When evaluating promotion, an explicit `quarantinedArtifactId` mismatch is terminal; never fall through to temporal checks. | ADR-0004 |
+| **Fail-Closed State Hydration** | Remote database sync must only treat 404/`NoSuchKey` as empty store; all other errors must abort to prevent remote state wiping. | ADR-0003 |
+| **Binary Buffer Integrity** | Pipeline runners must preserve raw `Buffer` payloads for non-text formats without early UTF-8 string conversion. | ADR-0001 |
+| **Container Ingress & Permissions** | Containers must bind `0.0.0.0` and pre-create/chown writable dirs (`/app/.artifacts`) before dropping to non-root users. | Operational |
 
 ---
 
@@ -118,6 +122,10 @@ Review every scraper PR against this checklist:
 - [ ] **No Silent Candidate Filtering**: Does strategy dispatch avoid dropping unparseable or incomplete elements with `.filter()`, ensuring all discovered records reach domain validation?
 - [ ] **Zero-Retry Execution**: Does rate limiting / backoff retry logic execute the initial call when `maxRetries: 0` and immediately propagate errors without retries?
 - [ ] **Public Replay Diagnostics**: Does `evaluateCandidatePatch` return structured per-fixture failure records in its return object and type contract?
+- [ ] **Terminal Artifact Binding**: In promotion checks, does `quarantinedArtifactId` mismatch terminate immediately without falling back to temporal checks?
+- [ ] **Fail-Closed Hydration**: Does S3/R2 state sync isolate 404 / `NoSuchKey` and rethrow all network, auth, or 5xx errors?
+- [ ] **Binary Buffer Preservation**: Does the runner pass raw `Buffer` instances for binary spreadsheets without converting them to strings first?
+- [ ] **Container User Permissions**: Does the Dockerfile create and `chown` `/app/.artifacts` before `USER pwuser`, and does the server bind to `0.0.0.0`?
 - [ ] **Commit Message**: Does commit conform to Conventional Commits (`feat:`, `fix:`, `chore:`, etc.)?
 
 ---
@@ -145,3 +153,7 @@ Review every scraper PR against this checklist:
 19. **Silent Candidate Filtering**: Using `.filter((c) => c.id.length > 0)` to discard unparseable items in multi-item strategy parsers, which conceals selector drift and records false healthy ingestion.
 20. **Pre-Emptive Retry Loop Exhaustion**: Bounding retry loops by `attempt < maxRetries` so that `maxRetries: 0` terminates immediately without executing the initial network request.
 21. **Buried Replay Diagnostics**: Computing structured per-fixture failure diagnostics but only persisting them in DB audit payloads, omitting them from the public `ReplayEvaluationResult` interface.
+22. **Temporal Promotion Fallthrough**: Allowing an audit with an explicit `quarantinedArtifactId` mismatch to unquarantine an older artifact via temporal comparison.
+23. **Fail-Open Remote Hydration**: Catching all errors indiscriminately in remote DB sync and treating network/auth failures as empty remote storage.
+24. **Early String Conversion of Binaries**: Invoking `.toString("utf8")` on raw binary payloads before format detection and decompression.
+25. **Privilege-Dropping Permission Crashes**: Switching to non-root `USER` without pre-creating and owning writable artifact and database directories.

@@ -1,6 +1,6 @@
 ---
 name: gridlock-code-review
-description: Comprehensive dual-mode code review engine for Gridlock repositories. Handles inbound pull request review comment triage with standardized 4-part analysis and outbound pre-PR diff auditing enforcing the 29 Gridlock Core Architectural Invariants and validation gates.
+description: Comprehensive dual-mode code review engine for Gridlock repositories. Handles inbound pull request review comment triage with standardized 4-part analysis and outbound pre-PR diff auditing enforcing the 32 Gridlock Core Architectural Invariants and validation gates.
 ---
 
 # Gridlock Code Review & Invariant Enforcement
@@ -14,7 +14,7 @@ Dual-mode code review workflow built specifically for Gridlock repositories, com
 Every finding or comment must carry an explicit plain-text priority tag:
 
 * **`[P0]` — Critical / Security / Irreversible Data Loss**: Vulnerabilities, credential leaks, destructive data operations without rollback, or remote state deletion/overwriting.
-* **`[P1]` — Architectural Invariant Breach / Functional Defect**: Violations of the 29 Core Architectural Invariants (ADRs), schema bypasses, untyped raw SQL, unhandled promise rejections, logic regressions, or false-positive pass gates.
+* **`[P1]` — Architectural Invariant Breach / Functional Defect**: Violations of the 32 Core Architectural Invariants (ADRs), schema bypasses, untyped raw SQL, unhandled promise rejections, logic regressions, or false-positive pass gates.
 * **`[P2]` — Resilience / Edge Case / Telemetry Mismatch**: Improper MIME/extension deduction, incomplete error logging, missing boundary conditions, or unmapped telemetry metrics.
 * **`[Nit]` — Stylistic Polish / Optimization Opportunity**: Naming clarity, dead code removal, minor refactoring, or documentation typos.
 
@@ -40,11 +40,17 @@ When reviewing, presenting, or addressing pull request comments (from human revi
    * Provide an evidence-based, critical assessment.
    * Evaluate validity, severity, and architectural alignment.
    * Explicitly cite relevant ADRs (ADR-0001 through ADR-0008) or numbered invariants from `AGENTS.md`.
+   * **Spec Anchor & Anti-Bloat Audit**:
+     * *Falsifiable Defect Check*: Does this comment fix a demonstrable bug or enforce an existing invariant, or is it speculative defensiveness?
+     * *Domain Semantics Check*: Does the suggested check break legitimate domain behavior (e.g. treating valid empty query results as fatal anomalies)?
+     * *Layer Seam Defense*: Does the change contaminate component boundaries (e.g. passing patch manifests to binary extractors)?
+     * *Pushback Protocol*: If the recommendation causes lateral drift, bloat, or violates domain rules, explicitly push back and reject or scope down the recommendation. Do NOT reflexively adopt comments to please the reviewer.
 
 4. **Proposed Solution**:
    * Provide concrete, technically exact code blocks or diffs.
    * Specify exact file paths and line ranges.
    * State the verification command to confirm the fix.
+   * If rejected during pushback, state the rationale and why no code changes are warranted.
 
 ---
 
@@ -52,7 +58,7 @@ When reviewing, presenting, or addressing pull request comments (from human revi
 
 Before submitting a pull request, creating a branch, or concluding a coding task, audit the full `git diff` against the following checklists:
 
-### Checklist 1: The 29 Gridlock Core Architectural Invariants
+### Checklist 1: The 32 Gridlock Core Architectural Invariants
 
 - [ ] **1. Provenance First**: Every observation links to a cryptographically hashed `source_artifact`.
 - [ ] **2. Browser-Only Playwright**: Single execution runtime for external Texas portals (ADR-0001).
@@ -83,6 +89,9 @@ Before submitting a pull request, creating a branch, or concluding a coding task
 - [ ] **27. Hydration-Gated State Publishing**: Workflow pipelines that publish state to persistent remote storage strictly gate execution on successful pre-run hydration (`steps.sync-hydrate.outcome == 'success'`); publishing under `always()` is prohibited.
 - [ ] **28. Fail-Fast Remote Sync Credentials**: State synchronization utilities throw fatal errors on absent or empty remote credentials (`CLOUDFLARE_R2_*`); returning mock no-op clients or synthesizing empty databases on publish is prohibited.
 - [ ] **29. Replay Binary Preservation**: Replay verification harnesses accept `string | Buffer` and pass raw buffers directly to candidate parsers without `.toString("utf8")`.
+- [ ] **30. Blob-First State Publishing**: Content-addressable artifact blobs in `.artifacts/` must be synchronized prior to uploading the SQLite database snapshot (`gridlock.db`).
+- [ ] **31. Reprocessing Anomaly Restoration**: When reprocessing quarantined payloads against candidate repair patches (`handleExistingArtifactMatch`), candidate parse/validation failures immediately restore `connector_configs.last_status = 'anomaly'`.
+- [ ] **32. Spec-Anchored Review & Anti-Bloat**: Inbound review comments audited against domain specifications, ADRs, and verification harnesses before adoption; speculative bloat, unnecessary layer parameter threading, and lateral drift rejected.
 
 ### Checklist 2: General Engineering Quality
 - [ ] **TypeScript Strictness**: No implicit `any`, no untyped type assertions (`as any`) unless wrapping low-level external mocks.
@@ -109,5 +118,5 @@ npm run test:tickets
 **Approval Criteria**:
 A code review passes and may be merged if and only if:
 1. Zero `[P0]` or `[P1]` issues remain unaddressed.
-2. All 29 Core Architectural Invariants are satisfied.
+2. All 32 Core Architectural Invariants are satisfied.
 3. All three verification commands exit with code `0`.

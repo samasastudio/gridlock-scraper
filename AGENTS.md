@@ -57,6 +57,7 @@
 29. **Replay Binary Preservation**: Self-healing replay verification harnesses (`evaluateCandidatePatch`, `evaluateSingleFixture`) must accept `string | Buffer` and pass binary fixtures directly to candidate parsers without `.toString("utf8")`.
 30. **Blob-First State Publishing**: When publishing state to remote object storage (Cloudflare R2), content-addressable artifact blobs in `.artifacts/` must be synchronized prior to uploading the SQLite database snapshot (`gridlock.db`) to preserve cryptographic provenance under partial network disruption.
 31. **Reprocessing Anomaly Restoration**: When reprocessing quarantined payloads against candidate repair patches (`handleExistingArtifactMatch`), if candidate parsing or domain validation throws an error, the runner must immediately restore `connector_configs.last_status = 'anomaly'`.
+32. **Spec-Anchored Review & Anti-Bloat**: Inbound review feedback (human or automated bot) must be audited against domain specifications, ADRs, and verification harnesses before adoption. Reflexively implementing speculative edge cases (e.g. unsupported file formats, synthetic guards on valid empty queries, or unnecessary cross-layer parameter threading) is strictly prohibited. Unsubstantiated or spec-drifting suggestions must be explicitly rejected with technical pushback citing project contracts.
 
 ---
 

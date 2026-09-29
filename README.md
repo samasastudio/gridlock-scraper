@@ -51,14 +51,21 @@ src/
 ├── jobs/           # Pipeline runners, deduplication, and transaction boundaries
 ├── storage/        # Content-addressable ArtifactStore & Drizzle SQLite repository
 ├── repair/         # Quarantine handler and replay sandbox
+├── cli.ts          # Deterministic batch CLI entrypoint (exit codes 0, 1, 2)
+├── telemetry.ts    # Scraper HTTP status and metrics API server
 ├── index.ts        # Public library exports
 └── schema.ts       # Canonical Drizzle ORM schema definitions
+scripts/
+├── sync-state.ts   # S3/R2 state hydration and blob-first snapshot publishing
+├── run-ticket.ts   # Deterministic single-ticket validation gate runner
+└── audit-tickets.ts# Backlog compliance audit matrix reporter
 tests/
-├── fixtures/       # Frozen sanitized HTML, PDF, and CSV captures
+├── fixtures/       # Frozen sanitized HTML, PDF, CSV, and XLSX captures
 ├── live/           # Gated live network smoke tests (LIVE_TEST=1)
 ├── parsers.test.ts # Pure offline parser unit tests
 ├── pipeline.test.ts# Pipeline idempotency and anomaly quarantine tests
-└── schema.test.ts  # Database schema foreign key integrity tests
+├── schema.test.ts  # Database schema foreign key integrity tests
+└── tickets/        # Falsifiable validation gate suites (Tickets 01–29)
 ```
 
 ---
@@ -72,6 +79,15 @@ npm test
 # Run TypeScript typecheck
 npm run typecheck
 
+# Run all backlog ticket validation gates
+npm run test:tickets
+
+# Print the ticket compliance audit matrix
+npm run test:tickets:audit
+
+# Run a specific ticket validation gate
+npm run test:ticket 23
+
 # Install Chromium browser binaries for Playwright
 npm run install:browsers
 
@@ -83,8 +99,9 @@ LIVE_TEST=1 npm test
 
 ## 5. Architectural References
 
-- [CONTEXT.md](file:///c:/Users/Owner/projects/gridlock-scraper/CONTEXT.md): Ubiquitous language glossary and 10 binding system constraints.
-- [AGENTS.md](file:///c:/Users/Owner/projects/gridlock-scraper/AGENTS.md): Steering doctrine, project stack invariants, and test verification standards.
-- [docs/adr/](file:///c:/Users/Owner/projects/gridlock-scraper/docs/adr/): Architecture Decision Records (ADR-0001 through ADR-0005).
+- [CONTEXT.md](file:///c:/Users/Owner/projects/gridlock-scraper/CONTEXT.md): Ubiquitous language glossary and binding system constraints.
+- [AGENTS.md](file:///c:/Users/Owner/projects/gridlock-scraper/AGENTS.md): Steering doctrine, 32 Core Architectural Invariants, and verification standards.
+- [docs/adr/](file:///c:/Users/Owner/projects/gridlock-scraper/docs/adr/): Architecture Decision Records (ADR-0001 through ADR-0008).
 - [docs/connectors/](file:///c:/Users/Owner/projects/gridlock-scraper/docs/connectors/): Source family connector specifications.
+- [docs/specs/](file:///c:/Users/Owner/projects/gridlock-scraper/docs/specs/): Deployment, runtime topology, and container hosting specifications.
 - [docs/integration.md](file:///c:/Users/Owner/projects/gridlock-scraper/docs/integration.md): Downstream export contract.

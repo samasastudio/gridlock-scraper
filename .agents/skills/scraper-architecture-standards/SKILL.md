@@ -138,6 +138,7 @@ Review every scraper PR against this checklist:
 - [ ] **Replay Binary Preservation**: Does `evaluateCandidatePatch` accept `string | Buffer` and pass raw binary buffers without `.toString("utf8")`?
 - [ ] **Blob-First State Publishing**: Does `sync-state` push `.artifacts/` blobs before publishing `gridlock.db` snapshot?
 - [ ] **Reprocessing Anomaly Restoration**: Does `handleExistingArtifactMatch` catch block call `updateConnectorStatus(connectorId, 'anomaly')`?
+- [ ] **Spec-Anchored Review & Anti-Bloat**: Are review comments vetted against domain specs and ADRs before adoption, with speculative complexity and lateral drift actively rejected?
 - [ ] **Commit Message**: Does commit conform to Conventional Commits (`feat:`, `fix:`, `chore:`, etc.)?
 
 ---
@@ -175,3 +176,4 @@ Review every scraper PR against this checklist:
 29. **Replay UTF-8 Binary Mutilation**: Passing binary fixtures (like `.xlsx`) through `.toString("utf8")` in replay harnesses, destroying binary zip headers before candidate parsers run.
 30. **Database-First State Publishing**: Pushing database snapshots before raw artifact blobs, risking broken provenance pointers in object storage.
 31. **Swallowed Reprocessing Errors**: Catching reprocessing failures without restoring connector status to `anomaly`, leaving operational dashboards reporting false health.
+32. **Speculative Review Bloat & Lateral Drift**: Reflexively adopting reviewer nitpicks that add unneeded format parsers, break valid empty domain queries with fatal throws, or thread unnecessary parameters across decoupled architectural seams.

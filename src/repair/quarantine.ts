@@ -25,6 +25,8 @@ export async function quarantineExtractionFailure(params: QuarantineParams): Pro
   const repo = new ScraperRepository(params.db);
   const contentType = params.contentType ?? "text/html";
   const extension = params.extension ?? (
+    (contentType.includes("spreadsheetml") || contentType.includes("xlsx")) ? "xlsx" :
+    (contentType.includes("ms-excel") || contentType.includes("xls")) ? "xls" :
     contentType.includes("csv") ? "csv" :
     contentType.includes("json") ? "json" :
     contentType.includes("pdf") ? "pdf" :

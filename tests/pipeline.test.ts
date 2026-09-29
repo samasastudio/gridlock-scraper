@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import path, { join } from "node:path";
 import test from "node:test";
 import { runScraperPipeline } from "../src/jobs/runner.js";
 import { parseTdlrHtml } from "../src/parsers/tdlr.js";
@@ -598,13 +599,70 @@ test("ScraperRepository status and telemetry aggregation methods return typed st
   const configs = await repo.getAllConnectorConfigs();
   assert.equal(configs.length, 2);
 
-  const runStats = await repo.getArtifactRunStats();
-  assert.equal(runStats.totalRuns, 0);
-  assert.equal(runStats.quarantinedRuns, 0);
-  assert.equal(runStats.successfulRuns, 0);
+  // 1. Initial empty stats
+  const initialRunStats = await repo.getArtifactRunStats();
+  assert.equal(initialRunStats.totalRuns, 0);
+  assert.equal(initialRunStats.quarantinedRuns, 0);
+  assert.equal(initialRunStats.successfulRuns, 0);
 
-  const audits = await repo.getRecentRepairAudits();
-  assert.equal(audits.length, 0);
+  // 2. Insert populated artifacts: 2 normal (successful) and 1 quarantine
+  await repo.insertSourceArtifact({
+    sha256Hash: "hash-ok-1",
+    sourceFamily: "tdlr_tabs",
+    sourceUrl: "https://example.com/1",
+    contentType: "text/html",
+    byteSize: 100,
+    storagePath: "1.html",
+    connectorVersion: "1.0.0",
+  });
+  await repo.insertSourceArtifact({
+    sha256Hash: "hash-ok-2",
+    sourceFamily: "tdlr_tabs",
+    sourceUrl: "https://example.com/2",
+    contentType: "text/html",
+    byteSize: 200,
+    storagePath: "2.html",
+    connectorVersion: "1.0.0",
+  });
+  await repo.insertSourceArtifact({
+    sha256Hash: "hash-quarantine-1",
+    sourceFamily: "tdlr_tabs",
+    sourceUrl: "https://example.com/3",
+    contentType: "text/html",
+    byteSize: 300,
+    storagePath: "3.html",
+    connectorVersion: "quarantine",
+  });
+
+  const populatedRunStats = await repo.getArtifactRunStats();
+  assert.equal(populatedRunStats.totalRuns, 3);
+  assert.equal(populatedRunStats.quarantinedRuns, 1);
+  assert.equal(populatedRunStats.successfulRuns, 2);
+
+  // 3. Insert repair audits with distinct timestamps and verify getRecentRepairAudits order & limit
+  await repo.insertRepairAudit({
+    connectorId: "c1",
+    failureReason: "Audit 1",
+    proposedPatch: {},
+    replayResults: {},
+    status: "pending_review",
+    createdAt: "2026-09-28 12:00:00",
+  });
+  await repo.insertRepairAudit({
+    connectorId: "c2",
+    failureReason: "Audit 2",
+    proposedPatch: {},
+    replayResults: {},
+    status: "promoted",
+    createdAt: "2026-09-28 12:05:00",
+  });
+
+  const audits = await repo.getRecentRepairAudits(1);
+  assert.equal(audits.length, 1);
+  assert.equal(audits[0].connectorId, "c2");
+
+  const allAudits = await repo.getRecentRepairAudits(10);
+  assert.equal(allAudits.length, 2);
 });
 
 test("evaluateCandidatePatch preserves raw binary buffer without UTF-8 string conversion", async () => {
@@ -666,6 +724,84 @@ test("createR2ClientFromEnv throws when credentials are not configured", async (
   } finally {
     if (origEndpoint) process.env.CLOUDFLARE_R2_ENDPOINT = origEndpoint;
   }
+});
+
+test("publishStateToR2 throws when local database file does not exist (Invariant 28)", async () => {
+  const { publishStateToR2 } = await import("../scripts/sync-state.js");
+  const nonExistentDb = join(tmpdir(), "non-existent-" + crypto.randomUUID() + ".db");
+  const mockR2: any = {
+    putObject: async () => ({}),
+  };
+
+  await assert.rejects(
+    async () => {
+      await publishStateToR2({
+        r2Client: mockR2,
+        localDbPath: nonExistentDb,
+      });
+    },
+    /Local database file does not exist at:/,
+    "publishStateToR2 must reject when local database is missing"
+  );
+});
+
+test("Pipeline execution with OpenXML spreadsheet MIME preserves .xlsx extension and raw binary buffer (Invariants 24 & 26)", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "gridlock-xlsx-pipeline-"));
+  const store = new ArtifactStore(tempDir);
+  const db = createDatabase(":memory:");
+  const repo = new ScraperRepository(db);
+
+  await repo.ensureConnectorConfigs([
+    { id: "ercot_xlsx_pipeline", sourceFamily: "ercot_queue" },
+  ]);
+
+  const fakeXlsxPayload = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x08, 0x00]);
+  let receivedContent: any = null;
+
+  const res = await runScraperPipeline({
+    connectorId: "ercot_xlsx_pipeline",
+    sourceFamily: "ercot_queue",
+    extractor: async () => ({
+      sourceFamily: "ercot_queue" as const,
+      sourceUrl: "https://ercot.com/gis/queue.xlsx",
+      contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      byteSize: fakeXlsxPayload.length,
+      content: fakeXlsxPayload,
+      connectorVersion: "1.0.0",
+    }),
+    parser: (content: any) => {
+      receivedContent = content;
+      return [
+        {
+          subjectType: "facility",
+          subjectId: "fac-xlsx-1",
+          property: "facility_details",
+          valueJson: { name: "XLSX Facility" },
+          confidence: 1.0,
+          resolutionMethod: "deterministic",
+        },
+      ];
+    },
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(res.earlyExit, false);
+  assert.equal(res.observationsCount, 1);
+  assert.ok(Buffer.isBuffer(receivedContent), "Parser must receive raw Buffer for binary spreadsheet");
+  assert.deepEqual(receivedContent, fakeXlsxPayload);
+
+  const artifact = await repo.findSourceArtifactByHash(store.computeHash(fakeXlsxPayload));
+  assert.equal(
+    artifact?.contentType,
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+  assert.ok(
+    artifact?.storagePath.endsWith(".xlsx"),
+    `Storage path must end with .xlsx, got: ${artifact?.storagePath}`
+  );
+
+  rmSync(tempDir, { recursive: true, force: true });
 });
 
 

@@ -14,5 +14,4 @@ export interface ExtractorOptions {
   browser?: Browser;
   url?: string;
   timeoutMs?: number;
-  manifest?: Record<string, unknown>;
 }

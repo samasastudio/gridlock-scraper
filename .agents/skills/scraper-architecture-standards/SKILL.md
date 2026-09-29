@@ -43,8 +43,6 @@ Comprehensive architectural, organizational, and code standards for `gridlock-sc
 | **Fail-Fast Sync Credentials** | Remote synchronization utilities must throw fatal errors on missing credentials rather than mock no-op runs. | Operational |
 | **Replay Binary Preservation** | Replay verification harnesses must accept `string | Buffer` and preserve raw binary buffers without `.toString("utf8")`. | ADR-0004 |
 | **Blob-First State Publishing** | Remote publishing must upload artifact blobs before database snapshots to preserve provenance integrity. | ADR-0001, ADR-0003 |
-| **Non-Empty Observation Guard** | Parsers must throw on empty records or 0 extracted observations, routing empty payloads to quarantine. | ADR-0002 |
-| **Binary OLE Preservation** | Excel parsers must reject OLE CFBF bitstreams before UTF-8 string conversion. | ADR-0001 |
 | **Reprocessing Anomaly Restoration** | Quarantined payload reprocessing failures must immediately restore connector status to anomaly. | ADR-0004 |
 
 ---
@@ -139,8 +137,6 @@ Review every scraper PR against this checklist:
 - [ ] **Fail-Fast Sync Credentials**: Does `createR2ClientFromEnv` throw fatal errors when remote credentials are not configured?
 - [ ] **Replay Binary Preservation**: Does `evaluateCandidatePatch` accept `string | Buffer` and pass raw binary buffers without `.toString("utf8")`?
 - [ ] **Blob-First State Publishing**: Does `sync-state` push `.artifacts/` blobs before publishing `gridlock.db` snapshot?
-- [ ] **Non-Empty Observation Guard**: Do continuous queue parsers throw when records or extracted observations are empty?
-- [ ] **Binary OLE Preservation**: Does the ERCOT parser check `isOlePayload` and reject before UTF-8 string conversion?
 - [ ] **Reprocessing Anomaly Restoration**: Does `handleExistingArtifactMatch` catch block call `updateConnectorStatus(connectorId, 'anomaly')`?
 - [ ] **Commit Message**: Does commit conform to Conventional Commits (`feat:`, `fix:`, `chore:`, etc.)?
 
@@ -178,6 +174,4 @@ Review every scraper PR against this checklist:
 28. **Silent Missing Sync Credentials**: Returning dummy no-op clients or synthesizing empty databases on publish when remote credentials are missing.
 29. **Replay UTF-8 Binary Mutilation**: Passing binary fixtures (like `.xlsx`) through `.toString("utf8")` in replay harnesses, destroying binary zip headers before candidate parsers run.
 30. **Database-First State Publishing**: Pushing database snapshots before raw artifact blobs, risking broken provenance pointers in object storage.
-31. **Silent Empty Ingestion**: Allowing continuous queue scrapers to return 0 records and report healthy status (`"ok"`).
-32. **OLE UTF-8 String Coercion**: Attempting to decode legacy `.xls` binary bitstreams as UTF-8 strings.
-33. **Swallowed Reprocessing Errors**: Catching reprocessing failures without restoring connector status to `anomaly`, leaving operational dashboards reporting false health.
+31. **Swallowed Reprocessing Errors**: Catching reprocessing failures without restoring connector status to `anomaly`, leaving operational dashboards reporting false health.

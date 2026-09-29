@@ -136,7 +136,7 @@ export async function runScraperPipeline(
 
   let rawResult: RawExtractionResult;
   try {
-    rawResult = await options.extractor({ manifest });
+    rawResult = await options.extractor();
   } catch (err: any) {
     await quarantineExtractionFailure({
       connectorId: options.connectorId,

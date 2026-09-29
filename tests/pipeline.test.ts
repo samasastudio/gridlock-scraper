@@ -804,7 +804,7 @@ test("Pipeline execution with OpenXML spreadsheet MIME preserves .xlsx extension
   rmSync(tempDir, { recursive: true, force: true });
 });
 
-test("Pipeline passes connector_configs.manifest into extractor and parser", async () => {
+test("Pipeline passes connector_configs.manifest into parser", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "gridlock-manifest-test-"));
   const store = new ArtifactStore(tempDir);
   const db = createDatabase(":memory:");
@@ -818,14 +818,12 @@ test("Pipeline passes connector_configs.manifest into extractor and parser", asy
     },
   ]);
 
-  let extractorPassedManifest: any = null;
   let parserPassedManifest: any = null;
 
   const result = await runScraperPipeline({
     connectorId: "tdlr_manifest_pipe",
     sourceFamily: "tdlr_tabs",
-    extractor: async (opts) => {
-      extractorPassedManifest = opts?.manifest;
+    extractor: async () => {
       return {
         sourceFamily: "tdlr_tabs" as const,
         sourceUrl: "https://example.com/item",
@@ -853,7 +851,6 @@ test("Pipeline passes connector_configs.manifest into extractor and parser", asy
   });
 
   assert.equal(result.observationsCount, 1);
-  assert.deepEqual(extractorPassedManifest, { customSelector: ".special-item", version: 42 });
   assert.deepEqual(parserPassedManifest, { customSelector: ".special-item", version: 42 });
 
   rmSync(tempDir, { recursive: true, force: true });

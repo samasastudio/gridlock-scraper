@@ -1,6 +1,6 @@
 import type { ObservationCandidate } from "../schemas/common.js";
 import { validateErcotInvariants } from "../schemas/ercot.js";
-import { convertXlsxToCsv, isOlePayload, isZipPayload } from "./xlsx.js";
+import { convertXlsxToCsv, isZipPayload } from "./xlsx.js";
 
 /**
  * Parses a single CSV line according to RFC 4180 rules, handling quotes and escaped quotes.
@@ -97,11 +97,6 @@ function mapCsvLineToObservations(
  * Pure parser for ERCOT Generation Interconnection Queue spreadsheet (.xlsx) payloads.
  */
 export function parseErcotSpreadsheet(payload: Buffer | string): ObservationCandidate[] {
-  if (isOlePayload(payload)) {
-    throw new Error(
-      "Binary OLE (.xls) format is not supported. Provide an OpenXML (.xlsx) bitstream."
-    );
-  }
   const csvContent = convertXlsxToCsv(payload);
   return parseErcotCsv(csvContent);
 }
@@ -113,12 +108,6 @@ export function parseErcotSpreadsheet(payload: Buffer | string): ObservationCand
 export function parseErcotCsv(input: string | Buffer): ObservationCandidate[] {
   if (isZipPayload(input)) {
     return parseErcotSpreadsheet(input);
-  }
-
-  if (isOlePayload(input)) {
-    throw new Error(
-      "Binary OLE (.xls) format is not supported for UTF-8 CSV parsing. Provide an OpenXML (.xlsx) or RFC 4180 CSV bitstream."
-    );
   }
 
   const csvContent = Buffer.isBuffer(input) ? input.toString("utf8") : input;

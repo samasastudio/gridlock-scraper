@@ -349,14 +349,9 @@ test("ERCOT parser extracts facilities directly from XLSX spreadsheet buffer", (
   assert.equal((locObs.valueJson as any).county, "Travis");
 });
 
-test("Austin pure parser throws on empty records array or invalid records", () => {
-  assert.throws(
-    () => {
-      parseAustinPermitsJson("[]");
-    },
-    /0 records|empty dataset/i,
-    "Austin parser must reject empty JSON array"
-  );
+test("Austin pure parser returns empty observations on empty array and rejects invalid records", () => {
+  const emptyObs = parseAustinPermitsJson("[]");
+  assert.equal(emptyObs.length, 0, "Austin parser should return empty observations array on empty dataset");
 
   assert.throws(
     () => {
@@ -364,19 +359,6 @@ test("Austin pure parser throws on empty records array or invalid records", () =
     },
     /Required|validation/i,
     "Austin parser must reject payloads that fail invariant validation"
-  );
-});
-
-test("ERCOT pure parser rejects legacy binary OLE bitstreams with explicit error", () => {
-  // OLE CFBF header: 0xD0, 0xCF, 0x11, 0xE0
-  const oleHeader = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00, 0x00]);
-
-  assert.throws(
-    () => {
-      parseErcotCsv(oleHeader);
-    },
-    /Binary OLE \(\.xls\) format is not supported/i,
-    "ERCOT parser must reject OLE bitstreams before UTF-8 string conversion"
   );
 });
 

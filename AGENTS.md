@@ -56,9 +56,7 @@
 28. **Fail-Fast Remote Sync Credentials**: State synchronization utilities and client factories (`createR2ClientFromEnv`) must throw fatal errors on absent or empty remote credentials (`CLOUDFLARE_R2_*`); returning mock no-op clients or synthesizing empty databases on publish is strictly prohibited.
 29. **Replay Binary Preservation**: Self-healing replay verification harnesses (`evaluateCandidatePatch`, `evaluateSingleFixture`) must accept `string | Buffer` and pass binary fixtures directly to candidate parsers without `.toString("utf8")`.
 30. **Blob-First State Publishing**: When publishing state to remote object storage (Cloudflare R2), content-addressable artifact blobs in `.artifacts/` must be synchronized prior to uploading the SQLite database snapshot (`gridlock.db`) to preserve cryptographic provenance under partial network disruption.
-31. **Non-Empty Observation Guard**: Extractors and parsers handling continuous queue feeds (e.g. Austin building permits, ERCOT queues) must throw fatal errors when input payloads contain 0 records or extract 0 observations, routing empty payloads into anomaly quarantine rather than recording false healthy ingestion.
-32. **Binary OLE Preservation**: Parsers and extractors handling spreadsheet bitstreams must inspect file signatures for legacy OLE CFBF binary formats (`\xD0\xCF\x11\xE0`) and reject them with descriptive errors prior to UTF-8 string conversion.
-33. **Reprocessing Anomaly Restoration**: When reprocessing quarantined payloads against candidate repair patches (`handleExistingArtifactMatch`), if candidate parsing or domain validation throws an error, the runner must immediately restore `connector_configs.last_status = 'anomaly'`.
+31. **Reprocessing Anomaly Restoration**: When reprocessing quarantined payloads against candidate repair patches (`handleExistingArtifactMatch`), if candidate parsing or domain validation throws an error, the runner must immediately restore `connector_configs.last_status = 'anomaly'`.
 
 ---
 

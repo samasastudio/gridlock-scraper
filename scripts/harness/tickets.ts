@@ -65,7 +65,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Handles 429 rate limiting with exponential backoff and jitter",
     ],
     testFile: "tests/tickets/ticket-04.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "05",
@@ -94,7 +94,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Only promotes patch to connector_configs.manifest if replay pass rate is 100%",
     ],
     testFile: "tests/tickets/ticket-06.test.ts",
-    expectedStatus: "In Progress",
+    expectedStatus: "Done",
   },
   {
     id: "07",
@@ -108,7 +108,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "GET /api/source-health/telemetry reports connector uptime and repair audits",
     ],
     testFile: "tests/tickets/ticket-07.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "19",
@@ -123,7 +123,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Image compiles and verifies offline tests cleanly inside container",
     ],
     testFile: "tests/tickets/ticket-19.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "20",
@@ -139,7 +139,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Unit tests verify argument parsing and exit code mapping",
     ],
     testFile: "tests/tickets/ticket-20.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "21",
@@ -154,7 +154,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Verifies payload SHA-256 checksums before and after upload",
     ],
     testFile: "tests/tickets/ticket-21.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "22",
@@ -169,7 +169,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Dispatches webhook alert (Discord/Slack) if CLI exits with code 2 (anomaly quarantined)",
     ],
     testFile: "tests/tickets/ticket-22.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "23",
@@ -184,7 +184,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Fall back gracefully or raise extraction anomaly on network timeout",
     ],
     testFile: "tests/tickets/ticket-23.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "24",
@@ -198,7 +198,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Reprocessing requires verified promotion proof",
     ],
     testFile: "tests/tickets/ticket-24.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "25",
@@ -212,7 +212,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Subsequent scraper executions load updated selectors from connector_configs.manifest",
     ],
     testFile: "tests/tickets/ticket-25.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "26",
@@ -226,7 +226,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Update all pipeline and repair tests to provide explicit expected counts and IDs",
     ],
     testFile: "tests/tickets/ticket-26.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "27",
@@ -240,7 +240,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Zod schema rejects invalid statuses, triggering quarantine isolation on selector drift",
     ],
     testFile: "tests/tickets/ticket-27.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "28",
@@ -254,7 +254,7 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Fail validation on unclassifiable or missing action types",
     ],
     testFile: "tests/tickets/ticket-28.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
   {
     id: "29",
@@ -268,6 +268,6 @@ export const SCRAPER_TICKETS: TicketDefinition[] = [
       "Accurate provenance metadata recorded for downstream replay tooling",
     ],
     testFile: "tests/tickets/ticket-29.test.ts",
-    expectedStatus: "Todo",
+    expectedStatus: "Done",
   },
 ];

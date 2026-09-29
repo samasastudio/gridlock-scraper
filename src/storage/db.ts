@@ -347,4 +347,170 @@ export class ScraperRepository {
     });
     return id;
   }
+
+  public async promotePatchAndRecordAudit(params: {
+    connectorId: string;
+    failureReason: string;
+    proposedPatch: Record<string, unknown>;
+    replayResults: Record<string, unknown>;
+  }): Promise<string> {
+    return await this.drizzle.transaction(async (tx) => {
+      const auditId = crypto.randomUUID();
+      await tx.insert(schema.repairAudits).values({
+        id: auditId,
+        connectorId: params.connectorId,
+        failureReason: params.failureReason,
+        proposedPatch: params.proposedPatch,
+        replayResults: params.replayResults,
+        status: "promoted",
+      });
+
+      await tx
+        .update(schema.connectorConfigs)
+        .set({
+          manifest: params.proposedPatch,
+          lastStatus: "ok",
+          updatedAt: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(schema.connectorConfigs.id, params.connectorId));
+
+      return auditId;
+    });
+  }
+
+  public async hasPromotedRepairAudit(
+    connectorId: string,
+    artifact?: SourceArtifact | { id: string; capturedAt?: string }
+  ): Promise<boolean> {
+    const audits = await this.drizzle
+      .select()
+      .from(schema.repairAudits)
+      .where(
+        sql`${schema.repairAudits.connectorId} = ${connectorId} AND ${schema.repairAudits.status} = 'promoted'`
+      )
+      .all();
+
+    if (audits.length === 0) return false;
+    if (!artifact) return true;
+
+    return audits.some((audit) => {
+      let replayResults: any = audit.replayResults;
+      if (typeof replayResults === "string") {
+        try {
+          replayResults = JSON.parse(replayResults);
+        } catch {
+          replayResults = {};
+        }
+      }
+
+      // Explicit binding to this quarantined artifact ID.
+      // If the audit names a specific quarantinedArtifactId, a mismatch is terminal.
+      if (replayResults?.quarantinedArtifactId) {
+        return replayResults.quarantinedArtifactId === artifact.id;
+      }
+
+      // Temporal binding: promoted audit must be at or after the artifact's quarantine timestamp
+      if (audit.createdAt && artifact.capturedAt) {
+        return audit.createdAt >= artifact.capturedAt;
+      }
+
+      // If capturedAt is not available on artifact, accept any promoted audit for this connector
+      return true;
+    });
+  }
+
+  public async ensureConnectorConfigs(
+    configs: Array<{
+      id: string;
+      sourceFamily: string;
+      manifest?: Record<string, unknown>;
+      invariants?: Record<string, unknown>;
+      lastStatus?: "idle" | "ok" | "anomaly" | "repairing" | "error";
+    }>
+  ): Promise<void> {
+    for (const config of configs) {
+      await this.drizzle
+        .insert(schema.connectorConfigs)
+        .values({
+          id: config.id,
+          sourceFamily: config.sourceFamily,
+          manifest: config.manifest ?? {},
+          invariants: config.invariants ?? {},
+          lastStatus: config.lastStatus ?? "idle",
+        })
+        .onConflictDoNothing();
+    }
+  }
+
+  public async updateConnectorManifest(
+    id: string,
+    manifest: Record<string, unknown>
+  ): Promise<void> {
+    await this.drizzle
+      .update(schema.connectorConfigs)
+      .set({
+        manifest: manifest,
+        updatedAt: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.connectorConfigs.id, id));
+  }
+
+  public async getArtifactRunStats(): Promise<{
+    totalRuns: number;
+    quarantinedRuns: number;
+    successfulRuns: number;
+  }> {
+    const [stats] = await this.drizzle
+      .select({
+        total: sql<number>`count(*)`,
+        quarantined: sql<number>`coalesce(sum(case when ${schema.sourceArtifacts.connectorVersion} = 'quarantine' then 1 else 0 end), 0)`,
+      })
+      .from(schema.sourceArtifacts)
+      .all();
+
+    const totalRuns = Number(stats?.total ?? 0);
+    const quarantinedRuns = Number(stats?.quarantined ?? 0);
+    return {
+      totalRuns,
+      quarantinedRuns,
+      successfulRuns: Math.max(0, totalRuns - quarantinedRuns),
+    };
+  }
+
+  public async getAllConnectorConfigs(): Promise<ConnectorConfig[]> {
+    return await this.drizzle.select().from(schema.connectorConfigs).all();
+  }
+
+  public async getConnectorTelemetryStats(): Promise<{
+    connectorsCount: number;
+    activeAnomalies: number;
+  }> {
+    const [counts] = await this.drizzle
+      .select({
+        total: sql<number>`count(*)`,
+        anomalies: sql<number>`coalesce(sum(case when ${schema.connectorConfigs.lastStatus} = 'anomaly' then 1 else 0 end), 0)`,
+      })
+      .from(schema.connectorConfigs)
+      .all();
+
+    return {
+      connectorsCount: Number(counts?.total ?? 0),
+      activeAnomalies: Number(counts?.anomalies ?? 0),
+    };
+  }
+
+  public async getRecentRepairAudits(
+    limit = 10
+  ): Promise<Array<{ id: string; connectorId: string; status: string }>> {
+    return await this.drizzle
+      .select({
+        id: schema.repairAudits.id,
+        connectorId: schema.repairAudits.connectorId,
+        status: schema.repairAudits.status,
+      })
+      .from(schema.repairAudits)
+      .orderBy(sql`${schema.repairAudits.createdAt} desc`)
+      .limit(limit)
+      .all();
+  }
 }

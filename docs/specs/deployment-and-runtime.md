@@ -22,8 +22,8 @@
            ▼                                                 ▼
 ┌─────────────────────────────────────┐   ┌──────────────────────────────────┐
 │ Pre-Run State Ingestion Hook        │   │ Post-Run State Publishing Hook   │
-│ • Pull latest 'gridlock.db' from R2 │   │ • Push updated 'gridlock.db'     │
-│ • Fetch artifact SHA-256 cache      │   │ • Sync new raw blobs to R2       │
+│ • Pull latest 'gridlock.db' from R2 │   │ • Sync new raw blobs to R2       │
+│ • Fetch artifact SHA-256 cache      │   │ • Push updated 'gridlock.db'     │
 │                                     │   │ • Publish dist/exports/*.json    │
 └─────────────────────────────────────┘   └──────────────────────────────────┘
 ```
@@ -32,7 +32,7 @@
    - **Phase 1 (Immediate / MVP / Verification)**: **GitHub Actions Scheduled Workflow** (`.github/workflows/ingest.yml`).
      - **Cadence**: Cron schedule (`cron: '0 */6 * * *'`).
      - **Runner**: `ubuntu-latest` with native Playwright Chromium support.
-     - **Storage Lifecycle**: Pulls previous `gridlock.db` state from Cloudflare R2 before sweep; pushes updated SQLite database and new artifacts to R2 upon completion.
+     - **Storage Lifecycle**: Pulls previous `gridlock.db` state from Cloudflare R2 before sweep; pushes new `.artifacts/` blobs, updated SQLite database, and exported snapshots to R2 upon completion (blob-first sync per Invariant 30).
    - **Phase 2 (Production / Dedicated)**: **Google Cloud Run Job** or **Dedicated Linux VPS** ($4–$6/mo on Hetzner Cloud / DigitalOcean).
      - **Rationale**: Provides static datacenter/residential IP to eliminate CDN bot challenges (Cloudflare Turnstile, Akamai) on Texas government portals (TDLR, ERCOT, TCEQ), and persistent NVMe disk for local SQLite without pre/post network sync overhead.
 
@@ -71,7 +71,7 @@
 1. **State Pull Failure (First Run / Network Blip)**:
    - If `gridlock.db` does not exist on R2 (initial boot), the pre-run hook initializes a fresh SQLite database using `DDL_SCHEMA` from `src/storage/db.ts`.
 2. **Post-Run Push Failure**:
-   - Uploads to R2 must be atomic. The new SQLite file is uploaded to a temporary key (`gridlock.db.tmp.<timestamp>`) and moved/promoted to `gridlock.db` only after checksum verification.
+   - Uploads to R2 must be atomic and follow **Blob-First State Publishing** ([Invariant 30](file:///c:/Users/Owner/projects/gridlock-scraper/AGENTS.md)). Raw content-addressable blobs in `.artifacts/` are synchronized first. The new SQLite file is uploaded to a temporary key (`gridlock.db.tmp.<timestamp>`) and moved/promoted to `gridlock.db` only after checksum verification, ensuring no database record references an unpersisted artifact blob.
 3. **Texas State Portal Bot Blocking**:
    - If an agency returns HTTP 403/503 or CAPTCHA challenge, the extractor halts without retry storms, records `bot_block` telemetry, and exits with code `2`.
 
@@ -86,7 +86,7 @@
 - [ ] **Pre-Run State Hydration & Post-Run Push**:
   - *Given* an ephemeral runner execution (GitHub Actions / Cloud Run Job),
   - *When* the scraper initializes,
-  - *Then* it pulls the latest `gridlock.db` and artifact manifest from Cloudflare R2; and upon successful ingestion, uploads the mutated SQLite database, new `.artifacts/` blobs, and `dist/exports/*.json` with verified SHA-256 checksums.
+  - *Then* it pulls the latest `gridlock.db` and artifact manifest from Cloudflare R2; and upon successful ingestion, uploads new `.artifacts/` blobs prior to the mutated SQLite database snapshot (blob-first order per Invariant 30), and `dist/exports/*.json` with verified SHA-256 checksums.
 - [ ] **Deterministic CLI Exit Codes**:
   - *Given* a running connector sweep via `src/cli.ts`,
   - *When* an invariant failure or selector anomaly is quarantined,

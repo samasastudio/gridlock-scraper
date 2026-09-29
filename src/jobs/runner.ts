@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { RawExtractionResult } from "../extractors/types.js";
+import type { ExtractorOptions, RawExtractionResult } from "../extractors/types.js";
 import { quarantineExtractionFailure } from "../repair/quarantine.js";
 import type { ObservationCandidate, SourceFamily } from "../schemas/common.js";
 import { ArtifactStore } from "../storage/artifact-store.js";
@@ -8,8 +8,8 @@ import { ScraperRepository } from "../storage/db.js";
 export interface PipelineRunOptions {
   connectorId: string;
   sourceFamily: SourceFamily;
-  extractor: () => Promise<RawExtractionResult>;
-  parser: (raw: string) => ObservationCandidate[];
+  extractor: (options?: ExtractorOptions) => Promise<RawExtractionResult>;
+  parser: (raw: string | Buffer, manifest?: Record<string, unknown>) => ObservationCandidate[];
   artifactStore?: ArtifactStore;
   db: DatabaseSync;
 }
@@ -26,11 +26,100 @@ export interface PipelineRunResult {
 
 function getExtensionForContentType(contentType: string): string {
   const ct = contentType.toLowerCase();
+  if (ct.includes("spreadsheetml") || ct.includes("xlsx")) return "xlsx";
+  if (ct.includes("ms-excel") || ct.includes("xls")) return "xls";
   if (ct.includes("csv")) return "csv";
   if (ct.includes("json")) return "json";
   if (ct.includes("pdf")) return "pdf";
   if (ct.includes("xml")) return "xml";
   return "html";
+}
+
+/**
+ * Handles existing artifact matches: either immediate early-exit on duplicate hash
+ * or conditional reprocessing if previously quarantined and promoted.
+ */
+async function handleExistingArtifactMatch(params: {
+  existingArtifact: any;
+  options: PipelineRunOptions;
+  rawResult: RawExtractionResult;
+  contentStr: string | Buffer;
+  sha256Hash: string;
+  repo: ScraperRepository;
+  manifest?: Record<string, unknown>;
+}): Promise<PipelineRunResult> {
+  const { existingArtifact, options, rawResult, contentStr, sha256Hash, repo, manifest } = params;
+
+  // Standard non-quarantined duplicate: early exit immediately (ADR-0003)
+  if (existingArtifact.connectorVersion !== "quarantine") {
+    await repo.updateConnectorStatus(options.connectorId, "ok");
+    return {
+      connectorId: options.connectorId,
+      sourceFamily: options.sourceFamily,
+      earlyExit: true,
+      sha256Hash,
+      observationsCount: 0,
+      sourceArtifactId: existingArtifact.id,
+    };
+  }
+
+  // Gate quarantine payload release on verified out-of-band promotion (ADR-0004, Ticket 24)
+  const hasPromotion = await repo.hasPromotedRepairAudit(options.connectorId, existingArtifact);
+  if (!hasPromotion) {
+    return {
+      connectorId: options.connectorId,
+      sourceFamily: options.sourceFamily,
+      earlyExit: true,
+      sha256Hash,
+      observationsCount: 0,
+      sourceArtifactId: existingArtifact.id,
+      anomaly: true,
+    };
+  }
+
+  // Known previously quarantined payload. Attempt re-processing with current parser (ADR-0004)
+  try {
+    const candidates = options.parser(contentStr, manifest);
+    const observations = candidates.map((cand) => ({
+      subjectType: cand.subjectType,
+      subjectId: cand.subjectId,
+      property: cand.property,
+      valueJson: cand.valueJson,
+      effectiveAt: cand.effectiveAt ?? null,
+      sourceArtifactId: existingArtifact.id,
+      connectorVersion: rawResult.connectorVersion,
+      confidence: cand.confidence ?? 1.0,
+      resolutionMethod: cand.resolutionMethod ?? "deterministic",
+    }));
+
+    await repo.commitReprocessedQuarantine({
+      artifactId: existingArtifact.id,
+      connectorVersion: rawResult.connectorVersion,
+      observations,
+      connectorId: options.connectorId,
+    });
+
+    return {
+      connectorId: options.connectorId,
+      sourceFamily: options.sourceFamily,
+      earlyExit: false,
+      sha256Hash,
+      observationsCount: observations.length,
+      sourceArtifactId: existingArtifact.id,
+    };
+  } catch {
+    // Still failing validation with current parser; remain in quarantine and restore anomaly status
+    await repo.updateConnectorStatus(options.connectorId, "anomaly");
+    return {
+      connectorId: options.connectorId,
+      sourceFamily: options.sourceFamily,
+      earlyExit: true,
+      sha256Hash,
+      observationsCount: 0,
+      sourceArtifactId: existingArtifact.id,
+      anomaly: true,
+    };
+  }
 }
 
 /**
@@ -41,6 +130,9 @@ export async function runScraperPipeline(
 ): Promise<PipelineRunResult> {
   const store = options.artifactStore ?? new ArtifactStore();
   const repo = new ScraperRepository(options.db);
+
+  const config = await repo.getConnectorConfig(options.connectorId);
+  const manifest = (config?.manifest as Record<string, unknown>) ?? undefined;
 
   let rawResult: RawExtractionResult;
   try {
@@ -74,67 +166,22 @@ export async function runScraperPipeline(
   // 1. Content-Hash Early-Exit Check (ADR-0003)
   const existingArtifact = await repo.findSourceArtifactByHash(sha256Hash);
   if (existingArtifact) {
-    if (existingArtifact.connectorVersion === "quarantine") {
-      // Known previously quarantined payload. Attempt re-processing with current parser (ADR-0004)
-      try {
-        const candidates = options.parser(contentStr);
-        const observations = candidates.map((cand) => ({
-          subjectType: cand.subjectType,
-          subjectId: cand.subjectId,
-          property: cand.property,
-          valueJson: cand.valueJson,
-          effectiveAt: cand.effectiveAt ?? null,
-          sourceArtifactId: existingArtifact.id,
-          connectorVersion: rawResult.connectorVersion,
-          confidence: cand.confidence ?? 1.0,
-          resolutionMethod: cand.resolutionMethod ?? "deterministic",
-        }));
-
-        await repo.commitReprocessedQuarantine({
-          artifactId: existingArtifact.id,
-          connectorVersion: rawResult.connectorVersion,
-          observations,
-          connectorId: options.connectorId,
-        });
-
-        return {
-          connectorId: options.connectorId,
-          sourceFamily: options.sourceFamily,
-          earlyExit: false,
-          sha256Hash,
-          observationsCount: observations.length,
-          sourceArtifactId: existingArtifact.id,
-        };
-      } catch {
-        // Still failing validation with current parser; remain in quarantine
-        return {
-          connectorId: options.connectorId,
-          sourceFamily: options.sourceFamily,
-          earlyExit: true,
-          sha256Hash,
-          observationsCount: 0,
-          sourceArtifactId: existingArtifact.id,
-          anomaly: true,
-        };
-      }
-    }
-
-    await repo.updateConnectorStatus(options.connectorId, "ok");
-    return {
-      connectorId: options.connectorId,
-      sourceFamily: options.sourceFamily,
-      earlyExit: true,
+    return await handleExistingArtifactMatch({
+      existingArtifact,
+      options,
+      rawResult,
+      contentStr: rawResult.content,
       sha256Hash,
-      observationsCount: 0,
-      sourceArtifactId: existingArtifact.id,
-    };
+      repo,
+      manifest,
+    });
   }
 
   // 2. Pure Parser & Invariant Validation (ADR-0002, Step 4)
   // Validate pure invariants before database writes to prevent corrupted partial artifacts.
   let candidates: ObservationCandidate[];
   try {
-    candidates = options.parser(contentStr);
+    candidates = options.parser(rawResult.content, manifest);
   } catch (err: any) {
     const { artifactId } = await quarantineExtractionFailure({
       connectorId: options.connectorId,
@@ -144,6 +191,8 @@ export async function runScraperPipeline(
       failureReason: `Parser invariant failure: ${err.message}`,
       artifactStore: store,
       db: options.db,
+      contentType: rawResult.contentType,
+      extension: getExtensionForContentType(rawResult.contentType),
     });
     return {
       connectorId: options.connectorId,

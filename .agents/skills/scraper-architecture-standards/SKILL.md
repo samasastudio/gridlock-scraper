@@ -25,7 +25,25 @@ Comprehensive architectural, organizational, and code standards for `gridlock-sc
 | **Atomic Transactional Writes** | `source_artifacts` and `observations` must be committed together inside a database transaction to prevent orphan hashes from deadlocking retries. | ADR-0003 |
 | **Non-Empty Stream Gate** | Continuous regulatory queues (ERCOT, municipal dockets) must assert $\ge 1$ parsed record; 0 records indicate an upstream outage or breaking layout shift. | ADR-0004 |
 | **Semantic Replay Oracles** | Every replay test fixture must define strict semantic expectations (`expectedMinCount`, `expectedSubjectIds`); loose `obs.length > 0` checks are banned. | ADR-0004 |
+| **Bounded Anomaly Promotion** | Candidate repair patches must be strictly bound to recorded quarantine failures (by failure ID and temporal window); unanchored anomaly clearance is prohibited. | ADR-0004 |
+| **CLI Script Executability** | Standalone scripts under `scripts/` must include entrypoint execution guards to run directly via CLI (`tsx scripts/<name>.ts`). | Standard |
+| **Decomposed Factory Returns** | Service factories must extract multi-line async methods into standalone functions and return clean reference objects. | AGENTS.md |
+| **Execution Integrity** | CLI and container entrypoints must wire real pipeline runners and return deterministic exit codes (0, 1, 2). | AGENTS.md |
 | **Agent Validation Gates** | Backlog tickets validated via dedicated `tests/tickets/ticket-XX.test.ts` suites; `npm run test:ticket <id>` acts as the definitive Definition of Done. | ADR-0006, ADR-0008 |
+| **Functional Transforms & Flat Control Flow** | Prefer pure array methods (`flatMap`, `map`) and early returns over mutable loop accumulators and deep nesting. Necessary loops must have documented architectural rationale. | Code Standard |
+| **No Silent Candidate Filtering** | Strategy dispatch selects format by DOM presence, not candidate validity; filtering malformed items before validation is banned to prevent silent data loss. | ADR-0004 |
+| **Zero-Retry Execution** | Retry utilities must treat `maxRetries` as retries after attempt 0, guaranteeing the initial network request runs when `maxRetries: 0`. | ADR-0001 |
+| **Public Replay Diagnostics** | Replay verification harnesses must expose structured per-fixture failure records (`details`) directly on return interfaces. | ADR-0004 |
+| **Terminal Artifact Binding** | When evaluating promotion, an explicit `quarantinedArtifactId` mismatch is terminal; never fall through to temporal checks. | ADR-0004 |
+| **Fail-Closed State Hydration** | Remote database sync must only treat 404/`NoSuchKey` as empty store; all other errors must abort to prevent remote state wiping. | ADR-0003 |
+| **Binary Buffer Integrity** | Pipeline runners must preserve raw `Buffer` payloads for non-text formats without early UTF-8 string conversion. | ADR-0001 |
+| **Container Ingress & Permissions** | Containers must bind `0.0.0.0` and pre-create/chown writable dirs (`/app/.artifacts`) before dropping to non-root users. | Operational |
+| **Spreadsheet MIME Precedence** | MIME extension derivation must test OpenXML/Excel tokens before generic XML/HTML. | ADR-0001 |
+| **Hydration-Gated Publishing** | Post-sync remote state publishing must strictly gate on successful pre-sync state hydration. | ADR-0003 |
+| **Fail-Fast Sync Credentials** | Remote synchronization utilities must throw fatal errors on missing credentials rather than mock no-op runs. | Operational |
+| **Replay Binary Preservation** | Replay verification harnesses must accept `string | Buffer` and preserve raw binary buffers without `.toString("utf8")`. | ADR-0004 |
+| **Blob-First State Publishing** | Remote publishing must upload artifact blobs before database snapshots to preserve provenance integrity. | ADR-0001, ADR-0003 |
+| **Reprocessing Anomaly Restoration** | Quarantined payload reprocessing failures must immediately restore connector status to anomaly. | ADR-0004 |
 
 ---
 
@@ -96,8 +114,31 @@ Review every scraper PR against this checklist:
 - [ ] **Non-Empty Verification**: For continuous queue sources, does the parser assert that at least one valid record was extracted?
 - [ ] **Media Type Preservation**: Does quarantine preserve the raw bitstream's true `contentType` and file extension?
 - [ ] **Replay Semantic Assertions**: Do all replay fixtures include explicit expected counts or subject IDs?
+- [ ] **Bounded Anomaly Promotion**: Does anomaly patch promotion prove resolution of a specific, recorded quarantined failure record?
+- [ ] **Executable CLI Scripts**: If adding or modifying a script in `scripts/`, does it contain an entrypoint execution block (`if (process.argv[1] === fileURLToPath(import.meta.url))`)?
+- [ ] **Decomposed Factory Returns**: Does client/service creation avoid massive stacked inline method literals in returned objects?
+- [ ] **Execution Wiring**: Does the CLI entrypoint actually wire database storage and pipeline runners rather than returning a no-op success code?
+- [ ] **HTTP 429 Response Check**: Does rate-limit retry logic handle resolved response objects with `status === 429` as well as thrown exceptions?
 - [ ] **Agent Validation Gate**: Does the implementation satisfy `npm run test:ticket <id>` with exit code 0?
 - [ ] **Falsifiable Red Spec**: Was the ticket acceptance test verified RED against real contracts before implementation without placeholder stubs?
+- [ ] **Pure Record Transformations**: Does record/line parsing use pure functions and `flatMap`/`map` rather than mutating shared accumulator arrays (`observations.push()`)?
+- [ ] **Flat Control Flow**: Are nested `if/else` ladders avoided in favor of early returns or strategy arrays?
+- [ ] **Documented Loop Rationale**: If an imperative loop, sequential iteration, or stateful scanner is used, does an inline comment explain why (e.g., SQLite write transaction locks, agency rate limits, RFC 4180 parsing)?
+- [ ] **Structured Replay Diagnostics**: Does the replay test harness return structured failure records per fixture rather than swallowing errors in blanket catch blocks?
+- [ ] **No Silent Candidate Filtering**: Does strategy dispatch avoid dropping unparseable or incomplete elements with `.filter()`, ensuring all discovered records reach domain validation?
+- [ ] **Zero-Retry Execution**: Does rate limiting / backoff retry logic execute the initial call when `maxRetries: 0` and immediately propagate errors without retries?
+- [ ] **Public Replay Diagnostics**: Does `evaluateCandidatePatch` return structured per-fixture failure records in its return object and type contract?
+- [ ] **Terminal Artifact Binding**: In promotion checks, does `quarantinedArtifactId` mismatch terminate immediately without falling back to temporal checks?
+- [ ] **Fail-Closed Hydration**: Does S3/R2 state sync isolate 404 / `NoSuchKey` and rethrow all network, auth, or 5xx errors?
+- [ ] **Binary Buffer Preservation**: Does the runner pass raw `Buffer` instances for binary spreadsheets without converting them to strings first?
+- [ ] **Container User Permissions**: Does the Dockerfile create and `chown` `/app/.artifacts` before `USER pwuser`, and does the server bind to `0.0.0.0`?
+- [ ] **Spreadsheet MIME Precedence**: Does extension derivation check spreadsheet tokens (`spreadsheetml`, `xlsx`, `ms-excel`, `xls`) before generic XML?
+- [ ] **Hydration-Gated Publishing**: Is post-sync publish gated on `steps.sync-hydrate.outcome == 'success'` rather than unconditional `always()`?
+- [ ] **Fail-Fast Sync Credentials**: Does `createR2ClientFromEnv` throw fatal errors when remote credentials are not configured?
+- [ ] **Replay Binary Preservation**: Does `evaluateCandidatePatch` accept `string | Buffer` and pass raw binary buffers without `.toString("utf8")`?
+- [ ] **Blob-First State Publishing**: Does `sync-state` push `.artifacts/` blobs before publishing `gridlock.db` snapshot?
+- [ ] **Reprocessing Anomaly Restoration**: Does `handleExistingArtifactMatch` catch block call `updateConnectorStatus(connectorId, 'anomaly')`?
+- [ ] **Spec-Anchored Review & Anti-Bloat**: Are review comments vetted against domain specs and ADRs before adoption, with speculative complexity and lateral drift actively rejected?
 - [ ] **Commit Message**: Does commit conform to Conventional Commits (`feat:`, `fix:`, `chore:`, etc.)?
 
 ---
@@ -115,3 +156,24 @@ Review every scraper PR against this checklist:
 9. **Permissive Patch Promotion**: Counting a replay test as passing merely because `obs.length > 0`.
 10. **Lossy Quarantine Media Types**: Saving non-HTML payloads (CSV, JSON, PDF) as `text/html` in quarantine.
 11. **Placeholder Test Gates**: Writing `assert.fail("pending")` or expectation-free test stubs instead of real contract assertions against target interfaces and schemas.
+12. **Unanchored Anomaly Promotion**: Clearing connector anomaly status or promoting patches without proving resolution against an active quarantined failure record.
+13. **Inert CLI Scripts**: Creating standalone scripts in `scripts/` that only export functions without an executable top-level invocation block.
+14. **Stacked Inline Method Literals**: Inlining heavy multi-line asynchronous methods directly inside a returned object literal in client factory functions, creating unreadable nested blocks.
+15. **Hollow Orchestration Entrypoints**: Creating CLI commands or container default processes that return exit code 0 without executing pipelines or starting background workers.
+16. **Mutable Parsing Accumulators**: Instantiating empty arrays and pushing observations inside `for` loops instead of pure `flatMap(mapRecordToObservations)`.
+17. **Undocumented Imperative Loops**: Using `for` or `while` loops for sequential operations without inline comments explaining the operational necessity (e.g. rate-limiting, transaction locks).
+18. **Swallowed Replay Errors**: Using `for..continue` with a simple numeric counter (`passed++`) that discards why historical fixtures or candidate patches failed.
+19. **Silent Candidate Filtering**: Using `.filter((c) => c.id.length > 0)` to discard unparseable items in multi-item strategy parsers, which conceals selector drift and records false healthy ingestion.
+20. **Pre-Emptive Retry Loop Exhaustion**: Bounding retry loops by `attempt < maxRetries` so that `maxRetries: 0` terminates immediately without executing the initial network request.
+21. **Buried Replay Diagnostics**: Computing structured per-fixture failure diagnostics but only persisting them in DB audit payloads, omitting them from the public `ReplayEvaluationResult` interface.
+22. **Temporal Promotion Fallthrough**: Allowing an audit with an explicit `quarantinedArtifactId` mismatch to unquarantine an older artifact via temporal comparison.
+23. **Fail-Open Remote Hydration**: Catching all errors indiscriminately in remote DB sync and treating network/auth failures as empty remote storage.
+24. **Early String Conversion of Binaries**: Invoking `.toString("utf8")` on raw binary payloads before format detection and decompression.
+25. **Privilege-Dropping Permission Crashes**: Switching to non-root `USER` without pre-creating and owning writable artifact and database directories.
+26. **MIME Masking by Generic XML/HTML**: Deriving file extensions without checking spreadsheet tokens (`spreadsheetml`, `xlsx`, `ms-excel`, `xls`) first, causing binary archives to be saved as `.xml` or `.html`.
+27. **Publishing After Failed Hydration**: Running post-sync state publishing under unconditional `always()` after a remote state read failure, overwriting production remote databases with empty schemas.
+28. **Silent Missing Sync Credentials**: Returning dummy no-op clients or synthesizing empty databases on publish when remote credentials are missing.
+29. **Replay UTF-8 Binary Mutilation**: Passing binary fixtures (like `.xlsx`) through `.toString("utf8")` in replay harnesses, destroying binary zip headers before candidate parsers run.
+30. **Database-First State Publishing**: Pushing database snapshots before raw artifact blobs, risking broken provenance pointers in object storage.
+31. **Swallowed Reprocessing Errors**: Catching reprocessing failures without restoring connector status to `anomaly`, leaving operational dashboards reporting false health.
+32. **Speculative Review Bloat & Lateral Drift**: Reflexively adopting reviewer nitpicks that add unneeded format parsers, break valid empty domain queries with fatal throws, or thread unnecessary parameters across decoupled architectural seams.

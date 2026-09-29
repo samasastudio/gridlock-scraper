@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
+import { deflateRawSync } from "node:zlib";
+import { parseAustinPermitsJson } from "../src/parsers/austin.js";
 import { parseCsvLine, parseErcotCsv } from "../src/parsers/ercot.js";
 import { parseMunicipalAgenda } from "../src/parsers/municipal.js";
 import { parseTceqHtml } from "../src/parsers/tceq.js";
@@ -207,3 +209,175 @@ test("Municipal pure parser rejects HTML missing case identifier or jurisdiction
     parseMunicipalAgenda(brokenAgendaHtml);
   });
 });
+
+test("Municipal pure parser throws validation error when any agenda item in multi-item payload lacks identifier", () => {
+  const mixedAgendaHtml = `
+    <div class="agenda-item">
+      <div class="action-identifier">C14-2024-0099</div>
+      <div class="jurisdiction">Austin</div>
+      <div class="action-title">Valid Rezoning Case</div>
+      <div class="action-type">zoning</div>
+      <div class="action-status">approved</div>
+    </div>
+    <div class="agenda-item">
+      <div class="jurisdiction">Austin</div>
+      <div class="action-title">Malformed Rezoning Case</div>
+      <div class="action-type">zoning</div>
+      <div class="action-status">approved</div>
+    </div>
+  `;
+  assert.throws(
+    () => {
+      parseMunicipalAgenda(mixedAgendaHtml);
+    },
+    /actionIdentifier/i,
+    "Malformed item in multi-item payload must throw schema error rather than being silently filtered"
+  );
+});
+
+test("ERCOT parser extracts facilities directly from XLSX spreadsheet buffer", () => {
+  function createSimpleZip(files: Record<string, string>): Buffer {
+    const localHeaders: Buffer[] = [];
+    const cdHeaders: Buffer[] = [];
+    let offset = 0;
+
+    for (const [name, content] of Object.entries(files)) {
+      const nameBuf = Buffer.from(name, "utf8");
+      const contentBuf = Buffer.from(content, "utf8");
+      const deflated = deflateRawSync(contentBuf);
+
+      const lh = Buffer.alloc(30 + nameBuf.length);
+      lh.writeUInt32LE(0x04034b50, 0);
+      lh.writeUInt16LE(20, 4);
+      lh.writeUInt16LE(0, 6);
+      lh.writeUInt16LE(8, 8);
+      lh.writeUInt16LE(0, 10);
+      lh.writeUInt16LE(0, 12);
+      lh.writeUInt32LE(0, 14);
+      lh.writeUInt32LE(deflated.length, 18);
+      lh.writeUInt32LE(contentBuf.length, 22);
+      lh.writeUInt16LE(nameBuf.length, 26);
+      lh.writeUInt16LE(0, 28);
+      nameBuf.copy(lh, 30);
+
+      const localEntry = Buffer.concat([lh, deflated]);
+      localHeaders.push(localEntry);
+
+      const cd = Buffer.alloc(46 + nameBuf.length);
+      cd.writeUInt32LE(0x02014b50, 0);
+      cd.writeUInt16LE(20, 4);
+      cd.writeUInt16LE(20, 6);
+      cd.writeUInt16LE(0, 8);
+      cd.writeUInt16LE(8, 10);
+      cd.writeUInt16LE(0, 12);
+      cd.writeUInt16LE(0, 14);
+      cd.writeUInt32LE(0, 16);
+      cd.writeUInt32LE(deflated.length, 20);
+      cd.writeUInt32LE(contentBuf.length, 24);
+      cd.writeUInt16LE(nameBuf.length, 28);
+      cd.writeUInt16LE(0, 30);
+      cd.writeUInt16LE(0, 32);
+      cd.writeUInt16LE(0, 34);
+      cd.writeUInt16LE(0, 36);
+      cd.writeUInt32LE(0, 38);
+      cd.writeUInt32LE(offset, 42);
+      nameBuf.copy(cd, 46);
+
+      cdHeaders.push(cd);
+      offset += localEntry.length;
+    }
+
+    const allLocal = Buffer.concat(localHeaders);
+    const allCd = Buffer.concat(cdHeaders);
+
+    const eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0);
+    eocd.writeUInt16LE(0, 4);
+    eocd.writeUInt16LE(0, 6);
+    eocd.writeUInt16LE(Object.keys(files).length, 8);
+    eocd.writeUInt16LE(Object.keys(files).length, 10);
+    eocd.writeUInt32LE(allCd.length, 12);
+    eocd.writeUInt32LE(allLocal.length, 16);
+    eocd.writeUInt16LE(0, 20);
+
+    return Buffer.concat([allLocal, allCd, eocd]);
+  }
+
+  const sstXml = `<sst count="8" uniqueCount="8">
+    <si><t>INR</t></si>
+    <si><t>Project Name</t></si>
+    <si><t>Fuel</t></si>
+    <si><t>MW</t></si>
+    <si><t>County</t></si>
+    <si><t>24INR0412</t></si>
+    <si><t>Lone Star Energy Storage 1</t></si>
+    <si><t>BAT</t></si>
+    <si><t>Travis</t></si>
+  </sst>`;
+
+  const sheetXml = `<sheetData>
+    <row r="1">
+      <c r="A1" t="s"><v>0</v></c>
+      <c r="B1" t="s"><v>1</v></c>
+      <c r="C1" t="s"><v>2</v></c>
+      <c r="D1" t="s"><v>3</v></c>
+      <c r="E1" t="s"><v>4</v></c>
+    </row>
+    <row r="2">
+      <c r="A2" t="s"><v>5</v></c>
+      <c r="B2" t="s"><v>6</v></c>
+      <c r="C2" t="s"><v>7</v></c>
+      <c r="D2"><v>400.0</v></c>
+      <c r="E2" t="s"><v>8</v></c>
+    </row>
+  </sheetData>`;
+
+  const xlsxBuffer = createSimpleZip({
+    "xl/sharedStrings.xml": sstXml,
+    "xl/worksheets/sheet1.xml": sheetXml,
+  });
+
+  const observations = parseErcotCsv(xlsxBuffer);
+  assert.ok(observations.length >= 3);
+
+  const mwObs = observations.find((o) => o.property === "power_capacity_mw");
+  assert.ok(mwObs);
+  assert.equal((mwObs.valueJson as any).mw, 400);
+
+  const locObs = observations.find((o) => o.subjectType === "location");
+  assert.ok(locObs);
+  assert.equal((locObs.valueJson as any).county, "Travis");
+});
+
+test("Austin pure parser returns empty observations on empty array and rejects invalid records", () => {
+  const emptyObs = parseAustinPermitsJson("[]");
+  assert.equal(emptyObs.length, 0, "Austin parser should return empty observations array on empty dataset");
+
+  assert.throws(
+    () => {
+      parseAustinPermitsJson(JSON.stringify([{ invalid_field: "no_data" }]));
+    },
+    /Required|validation/i,
+    "Austin parser must reject payloads that fail invariant validation"
+  );
+});
+
+test("TDLR pure parser utilizes dynamic selectors from manifest when provided", () => {
+  const html = `<html><body><span class="custom-proj-id">TABS99991234</span><span class="custom-proj-name">Repaired Facility</span><span id="ctl00_ContentPlaceHolder1_lblEstimatedCost">$500,000</span><span id="ctl00_ContentPlaceHolder1_lblCity">Austin</span><span id="ctl00_ContentPlaceHolder1_lblCounty">Travis</span></body></html>`;
+
+  // Without manifest, default selector does not match the custom class
+  assert.throws(() => {
+    parseTdlrHtml(html);
+  });
+
+  // With manifest providing the patched selector
+  const observations = parseTdlrHtml(html, {
+    selector: ".custom-proj-id",
+    projectNameSelector: ".custom-proj-name",
+  });
+
+  assert.ok(observations.length >= 2);
+  const projObs = observations.find((o) => o.subjectId === "TABS99991234");
+  assert.ok(projObs);
+});
+

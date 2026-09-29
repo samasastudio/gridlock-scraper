@@ -14,6 +14,11 @@ test("Ticket 22 - Criteria 1 & 2: GitHub Actions ingest workflow triggers on sch
   assert.match(content, /sync-state.*hydrate|pre-sync/i, "Workflow must run pre-sync state hydration");
   assert.match(content, /cli.*--source/i, "Workflow must execute CLI ingestion sweep");
   assert.match(content, /sync-state.*publish|post-sync/i, "Workflow must run post-sync state publish");
+  assert.match(
+    content,
+    /steps\.sync-hydrate\.outcome\s*==\s*['"]success['"]/,
+    "Post-sync publish must be gated on successful state hydration"
+  );
 });
 
 test("Ticket 22 - Criteria 3: Binds mandatory repository secrets", () => {

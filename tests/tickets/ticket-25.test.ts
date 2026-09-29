@@ -56,3 +56,69 @@ test("Ticket 25 - Criteria 1 & 2: Updates connector_configs.manifest atomically 
   );
   assert.equal(manifest?.version, 2);
 });
+
+test("Ticket 25 - Criteria 3: Subsequent scraper executions load updated selectors from connector_configs.manifest", async () => {
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { ArtifactStore } = await import("../../src/storage/artifact-store.js");
+
+  const tempDir = mkdtempSync(join(tmpdir(), "gridlock-ticket25-"));
+  const store = new ArtifactStore(tempDir);
+  const db = createDatabase(":memory:");
+  const repo = new ScraperRepository(db);
+
+  await repo.ensureConnectorConfigs([
+    {
+      id: "tdlr_v1",
+      sourceFamily: "tdlr_tabs",
+      manifest: {
+        version: 2,
+        selector: "#ctl00_ContentPlaceHolder1_lblProjectNumber",
+      },
+      lastStatus: "ok",
+    },
+  ]);
+
+  let passedManifest: any = null;
+
+  const { runScraperPipeline } = await import("../../src/jobs/runner.js");
+  const result = await runScraperPipeline({
+    connectorId: "tdlr_v1",
+    sourceFamily: "tdlr_tabs",
+    extractor: async () => ({
+      sourceFamily: "tdlr_tabs" as const,
+      sourceUrl: "https://example.com/tabs",
+      contentType: "text/html",
+      byteSize: 100,
+      content: `<html><body><span id="ctl00_ContentPlaceHolder1_lblProjectNumber">TABS2024999</span><span id="ctl00_ContentPlaceHolder1_lblProjectName">Test</span><span id="ctl00_ContentPlaceHolder1_lblEstimatedCost">$100,000</span><span id="ctl00_ContentPlaceHolder1_lblCity">Austin</span><span id="ctl00_ContentPlaceHolder1_lblCounty">Travis</span></body></html>`,
+      connectorVersion: "1.0.0",
+    }),
+    parser: (content, manifest) => {
+      passedManifest = manifest;
+      return [
+        {
+          subjectType: "project",
+          subjectId: "TABS2024999",
+          property: "status",
+          valueJson: { status: "active" },
+          confidence: 1.0,
+          resolutionMethod: "deterministic",
+        },
+      ];
+    },
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(result.observationsCount, 1);
+  assert.ok(passedManifest, "Subsequent pipeline execution must pass manifest to parser");
+  assert.equal(
+    passedManifest.selector,
+    "#ctl00_ContentPlaceHolder1_lblProjectNumber"
+  );
+  assert.equal(passedManifest.version, 2);
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+

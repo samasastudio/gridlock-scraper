@@ -379,10 +379,13 @@ if (scriptPath.endsWith("sync-state.ts") || scriptPath.endsWith("sync-state.js")
       if (!fs.existsSync(targetDbPath)) {
         throw new Error(`Target DB does not exist at ${targetDbPath} for publish`);
       }
-      publishStateToR2({ r2Client, localDbPath: targetDbPath, artifactsDir })
-        .then(() => syncArtifactBlobsToR2({ r2Client, artifactsDir }))
+      syncArtifactBlobsToR2({ r2Client, artifactsDir })
         .then((res) => {
-          console.log(`[sync-state] State publish complete. Synced ${res.syncedCount} blobs.`);
+          console.log(`[sync-state] Artifact blobs sync complete. Synced ${res.syncedCount} blobs.`);
+          return publishStateToR2({ r2Client, localDbPath: targetDbPath, artifactsDir });
+        })
+        .then(() => {
+          console.log(`[sync-state] State publish complete.`);
           process.exit(0);
         })
         .catch((err) => {

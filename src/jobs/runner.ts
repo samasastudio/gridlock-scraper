@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { RawExtractionResult } from "../extractors/types.js";
+import type { ExtractorOptions, RawExtractionResult } from "../extractors/types.js";
 import { quarantineExtractionFailure } from "../repair/quarantine.js";
 import type { ObservationCandidate, SourceFamily } from "../schemas/common.js";
 import { ArtifactStore } from "../storage/artifact-store.js";
@@ -8,8 +8,8 @@ import { ScraperRepository } from "../storage/db.js";
 export interface PipelineRunOptions {
   connectorId: string;
   sourceFamily: SourceFamily;
-  extractor: () => Promise<RawExtractionResult>;
-  parser: (raw: string | Buffer) => ObservationCandidate[];
+  extractor: (options?: ExtractorOptions) => Promise<RawExtractionResult>;
+  parser: (raw: string | Buffer, manifest?: Record<string, unknown>) => ObservationCandidate[];
   artifactStore?: ArtifactStore;
   db: DatabaseSync;
 }
@@ -46,8 +46,9 @@ async function handleExistingArtifactMatch(params: {
   contentStr: string | Buffer;
   sha256Hash: string;
   repo: ScraperRepository;
+  manifest?: Record<string, unknown>;
 }): Promise<PipelineRunResult> {
-  const { existingArtifact, options, rawResult, contentStr, sha256Hash, repo } = params;
+  const { existingArtifact, options, rawResult, contentStr, sha256Hash, repo, manifest } = params;
 
   // Standard non-quarantined duplicate: early exit immediately (ADR-0003)
   if (existingArtifact.connectorVersion !== "quarantine") {
@@ -78,7 +79,7 @@ async function handleExistingArtifactMatch(params: {
 
   // Known previously quarantined payload. Attempt re-processing with current parser (ADR-0004)
   try {
-    const candidates = options.parser(contentStr);
+    const candidates = options.parser(contentStr, manifest);
     const observations = candidates.map((cand) => ({
       subjectType: cand.subjectType,
       subjectId: cand.subjectId,
@@ -107,7 +108,8 @@ async function handleExistingArtifactMatch(params: {
       sourceArtifactId: existingArtifact.id,
     };
   } catch {
-    // Still failing validation with current parser; remain in quarantine
+    // Still failing validation with current parser; remain in quarantine and restore anomaly status
+    await repo.updateConnectorStatus(options.connectorId, "anomaly");
     return {
       connectorId: options.connectorId,
       sourceFamily: options.sourceFamily,
@@ -129,9 +131,12 @@ export async function runScraperPipeline(
   const store = options.artifactStore ?? new ArtifactStore();
   const repo = new ScraperRepository(options.db);
 
+  const config = await repo.getConnectorConfig(options.connectorId);
+  const manifest = (config?.manifest as Record<string, unknown>) ?? undefined;
+
   let rawResult: RawExtractionResult;
   try {
-    rawResult = await options.extractor();
+    rawResult = await options.extractor({ manifest });
   } catch (err: any) {
     await quarantineExtractionFailure({
       connectorId: options.connectorId,
@@ -168,6 +173,7 @@ export async function runScraperPipeline(
       contentStr: rawResult.content,
       sha256Hash,
       repo,
+      manifest,
     });
   }
 
@@ -175,7 +181,7 @@ export async function runScraperPipeline(
   // Validate pure invariants before database writes to prevent corrupted partial artifacts.
   let candidates: ObservationCandidate[];
   try {
-    candidates = options.parser(rawResult.content);
+    candidates = options.parser(rawResult.content, manifest);
   } catch (err: any) {
     const { artifactId } = await quarantineExtractionFailure({
       connectorId: options.connectorId,

@@ -93,5 +93,14 @@ export function parseAustinPermitsJson(raw: string | Buffer): ObservationCandida
     throw new Error("Austin permits JSON payload must be an array of records.");
   }
 
-  return records.flatMap(mapRecordToObservations);
+  if (records.length === 0) {
+    throw new Error("Austin permits payload contains 0 records (empty dataset).");
+  }
+
+  const observations = records.flatMap(mapRecordToObservations);
+  if (observations.length === 0) {
+    throw new Error("Austin permits parser produced 0 observations from payload.");
+  }
+
+  return observations;
 }

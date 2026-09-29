@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { deflateRawSync } from "node:zlib";
+import { parseAustinPermitsJson } from "../src/parsers/austin.js";
 import { parseCsvLine, parseErcotCsv } from "../src/parsers/ercot.js";
 import { parseMunicipalAgenda } from "../src/parsers/municipal.js";
 import { parseTceqHtml } from "../src/parsers/tceq.js";
@@ -347,3 +348,54 @@ test("ERCOT parser extracts facilities directly from XLSX spreadsheet buffer", (
   assert.ok(locObs);
   assert.equal((locObs.valueJson as any).county, "Travis");
 });
+
+test("Austin pure parser throws on empty records array or invalid records", () => {
+  assert.throws(
+    () => {
+      parseAustinPermitsJson("[]");
+    },
+    /0 records|empty dataset/i,
+    "Austin parser must reject empty JSON array"
+  );
+
+  assert.throws(
+    () => {
+      parseAustinPermitsJson(JSON.stringify([{ invalid_field: "no_data" }]));
+    },
+    /Required|validation/i,
+    "Austin parser must reject payloads that fail invariant validation"
+  );
+});
+
+test("ERCOT pure parser rejects legacy binary OLE bitstreams with explicit error", () => {
+  // OLE CFBF header: 0xD0, 0xCF, 0x11, 0xE0
+  const oleHeader = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00, 0x00]);
+
+  assert.throws(
+    () => {
+      parseErcotCsv(oleHeader);
+    },
+    /Binary OLE \(\.xls\) format is not supported/i,
+    "ERCOT parser must reject OLE bitstreams before UTF-8 string conversion"
+  );
+});
+
+test("TDLR pure parser utilizes dynamic selectors from manifest when provided", () => {
+  const html = `<html><body><span class="custom-proj-id">TABS99991234</span><span class="custom-proj-name">Repaired Facility</span><span id="ctl00_ContentPlaceHolder1_lblEstimatedCost">$500,000</span><span id="ctl00_ContentPlaceHolder1_lblCity">Austin</span><span id="ctl00_ContentPlaceHolder1_lblCounty">Travis</span></body></html>`;
+
+  // Without manifest, default selector does not match the custom class
+  assert.throws(() => {
+    parseTdlrHtml(html);
+  });
+
+  // With manifest providing the patched selector
+  const observations = parseTdlrHtml(html, {
+    selector: ".custom-proj-id",
+    projectNameSelector: ".custom-proj-name",
+  });
+
+  assert.ok(observations.length >= 2);
+  const projObs = observations.find((o) => o.subjectId === "TABS99991234");
+  assert.ok(projObs);
+});
+

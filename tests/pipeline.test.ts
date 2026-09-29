@@ -804,4 +804,150 @@ test("Pipeline execution with OpenXML spreadsheet MIME preserves .xlsx extension
   rmSync(tempDir, { recursive: true, force: true });
 });
 
+test("Pipeline passes connector_configs.manifest into extractor and parser", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "gridlock-manifest-test-"));
+  const store = new ArtifactStore(tempDir);
+  const db = createDatabase(":memory:");
+  const repo = new ScraperRepository(db);
+
+  await repo.ensureConnectorConfigs([
+    {
+      id: "tdlr_manifest_pipe",
+      sourceFamily: "tdlr_tabs",
+      manifest: { customSelector: ".special-item", version: 42 },
+    },
+  ]);
+
+  let extractorPassedManifest: any = null;
+  let parserPassedManifest: any = null;
+
+  const result = await runScraperPipeline({
+    connectorId: "tdlr_manifest_pipe",
+    sourceFamily: "tdlr_tabs",
+    extractor: async (opts) => {
+      extractorPassedManifest = opts?.manifest;
+      return {
+        sourceFamily: "tdlr_tabs" as const,
+        sourceUrl: "https://example.com/item",
+        contentType: "text/html",
+        byteSize: 100,
+        content: `<html><body><div class="special-item">Data</div></body></html>`,
+        connectorVersion: "1.0.0",
+      };
+    },
+    parser: (content, manifest) => {
+      parserPassedManifest = manifest;
+      return [
+        {
+          subjectType: "project",
+          subjectId: "P-100",
+          property: "status",
+          valueJson: { status: "ok" },
+          confidence: 1.0,
+          resolutionMethod: "deterministic",
+        },
+      ];
+    },
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(result.observationsCount, 1);
+  assert.deepEqual(extractorPassedManifest, { customSelector: ".special-item", version: 42 });
+  assert.deepEqual(parserPassedManifest, { customSelector: ".special-item", version: 42 });
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+
+test("Failed quarantine reprocessing restores connector status to anomaly", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "gridlock-reprocess-fail-"));
+  const store = new ArtifactStore(tempDir);
+  const db = createDatabase(":memory:");
+  const repo = new ScraperRepository(db);
+
+  await repo.ensureConnectorConfigs([
+    { id: "test_reprocess_pipe", sourceFamily: "tdlr_tabs", lastStatus: "anomaly" },
+  ]);
+
+  const payload = "<html><body>corrupted payload</body></html>";
+  const sha256 = store.computeHash(payload);
+
+  // Store quarantined artifact
+  const stored = store.store("tdlr_tabs", payload, "html");
+  await repo.commitNewArtifactWithObservations({
+    artifact: {
+      sha256Hash: sha256,
+      sourceFamily: "tdlr_tabs",
+      sourceUrl: "https://example.com/failing",
+      contentType: "text/html",
+      byteSize: stored.byteSize,
+      storagePath: stored.storagePath,
+      connectorVersion: "quarantine",
+    },
+    observations: () => [],
+    connectorId: "test_reprocess_pipe",
+  });
+
+  // Promote repair audit
+  await repo.promotePatchAndRecordAudit({
+    connectorId: "test_reprocess_pipe",
+    failureReason: "Testing reprocessing failure",
+    proposedPatch: { selector: ".fixed" },
+    replayResults: { passed: 1, total: 1, allPassed: true },
+  });
+
+  // Verify status is currently 'ok' following promotion
+  const configBefore = await repo.getConnectorConfig("test_reprocess_pipe");
+  assert.equal(configBefore?.lastStatus, "ok");
+
+  // Re-run pipeline where parser STILL throws during reprocessing
+  const res = await runScraperPipeline({
+    connectorId: "test_reprocess_pipe",
+    sourceFamily: "tdlr_tabs",
+    extractor: async () => ({
+      sourceFamily: "tdlr_tabs" as const,
+      sourceUrl: "https://example.com/failing",
+      contentType: "text/html",
+      byteSize: payload.length,
+      content: payload,
+      connectorVersion: "1.0.1",
+    }),
+    parser: () => {
+      throw new Error("Still failing invariant validation");
+    },
+    artifactStore: store,
+    db,
+  });
+
+  assert.equal(res.anomaly, true);
+
+  // Status must be restored to 'anomaly'
+  const configAfter = await repo.getConnectorConfig("test_reprocess_pipe");
+  assert.equal(configAfter?.lastStatus, "anomaly");
+
+  rmSync(tempDir, { recursive: true, force: true });
+});
+
+test("promotePatchAndRecordAudit writes manifest as object without double stringification", async () => {
+  const db = createDatabase(":memory:");
+  const repo = new ScraperRepository(db);
+
+  await repo.ensureConnectorConfigs([
+    { id: "test_manifest_obj", sourceFamily: "tdlr_tabs" },
+  ]);
+
+  const patch = { selector: "#main-project-id", version: 3 };
+  await repo.promotePatchAndRecordAudit({
+    connectorId: "test_manifest_obj",
+    failureReason: "Selector drift fix",
+    proposedPatch: patch,
+    replayResults: { passed: 1, total: 1, allPassed: true },
+  });
+
+  const config = await repo.getConnectorConfig("test_manifest_obj");
+  assert.equal(typeof config?.manifest, "object");
+  assert.deepEqual(config?.manifest, patch);
+});
+
+
 

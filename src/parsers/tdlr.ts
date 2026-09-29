@@ -6,18 +6,26 @@ import { validateTdlrInvariants } from "../schemas/tdlr.js";
  * Pure parser for TDLR TABS HTML detail pages.
  * Zero browser or database dependencies.
  */
-export function parseTdlrHtml(raw: string | Buffer): ObservationCandidate[] {
+export function parseTdlrHtml(
+  raw: string | Buffer,
+  manifest?: Record<string, unknown>
+): ObservationCandidate[] {
   const html = Buffer.isBuffer(raw) ? raw.toString("utf8") : raw;
   const $ = cheerio.load(html);
 
+  const customSelector = manifest?.selector as string | undefined;
+  const customProjectNameSelector = manifest?.projectNameSelector as string | undefined;
+
   // Extract from typical ASP.NET WebForms table / label ids or semantic table cells
   const projectNumber =
+    (customSelector ? $(customSelector).text().trim() : "") ||
     $("#ctl00_ContentPlaceHolder1_lblProjectNumber").text().trim() ||
     $("td:contains('Project Number:')").next("td").text().trim() ||
     html.match(/TABS\d{8,12}/)?.[0] ||
     "";
 
   const projectName =
+    (customProjectNameSelector ? $(customProjectNameSelector).text().trim() : "") ||
     $("#ctl00_ContentPlaceHolder1_lblProjectName").text().trim() ||
     $("td:contains('Project Name:')").next("td").text().trim() ||
     "";

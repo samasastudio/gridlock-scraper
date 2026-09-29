@@ -368,7 +368,7 @@ export class ScraperRepository {
       await tx
         .update(schema.connectorConfigs)
         .set({
-          manifest: JSON.stringify(params.proposedPatch),
+          manifest: params.proposedPatch,
           lastStatus: "ok",
           updatedAt: sql`CURRENT_TIMESTAMP`,
         })
@@ -449,7 +449,7 @@ export class ScraperRepository {
     await this.drizzle
       .update(schema.connectorConfigs)
       .set({
-        manifest: JSON.stringify(manifest),
+        manifest: manifest,
         updatedAt: sql`CURRENT_TIMESTAMP`,
       })
       .where(eq(schema.connectorConfigs.id, id));

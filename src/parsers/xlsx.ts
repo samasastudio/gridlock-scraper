@@ -40,6 +40,29 @@ export function isZipPayload(input: Buffer | string): boolean {
 }
 
 /**
+ * Checks whether an input buffer or string has the OLE CFBF magic signature (\xD0\xCF\x11\xE0).
+ */
+export function isOlePayload(input: Buffer | string): boolean {
+  if (Buffer.isBuffer(input)) {
+    return (
+      input.length >= 4 &&
+      input[0] === 0xd0 &&
+      input[1] === 0xcf &&
+      input[2] === 0x11 &&
+      input[3] === 0xe0
+    );
+  }
+  return (
+    typeof input === "string" &&
+    input.length >= 4 &&
+    input.charCodeAt(0) === 0xd0 &&
+    input.charCodeAt(1) === 0xcf &&
+    input.charCodeAt(2) === 0x11 &&
+    input.charCodeAt(3) === 0xe0
+  );
+}
+
+/**
  * Extracts all files from a standard ZIP archive buffer using Node's native inflateRawSync.
  */
 export function extractZipEntries(buffer: Buffer): Map<string, Buffer> {

@@ -45,7 +45,7 @@ export interface ConnectorJobDefinition {
   connectorId: string;
   sourceFamily: SourceFamily;
   extractor: (options?: ExtractorOptions) => Promise<RawExtractionResult>;
-  parser: (raw: string | Buffer) => ObservationCandidate[];
+  parser: (raw: string | Buffer, manifest?: Record<string, unknown>) => ObservationCandidate[];
 }
 
 export const CONNECTOR_JOBS: Record<

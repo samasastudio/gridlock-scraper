@@ -22,15 +22,19 @@ export function buildSocrataUrl(params: SocrataUrlParams = {}): string {
   const conditions: string[] = [];
 
   if (params.startDate) {
-    conditions.push(`applied_date >= '${params.startDate}'`);
+    conditions.push(`applieddate >= '${params.startDate}'`);
   }
   if (params.endDate) {
-    conditions.push(`applied_date <= '${params.endDate}'`);
+    conditions.push(`applieddate <= '${params.endDate}'`);
   }
 
   const query = conditions.length > 0 ? `?$where=${conditions.join(" AND ")}` : "";
   const limitQuery = params.limit ? `${query ? "&" : "?"}$limit=${params.limit}` : "";
-  return `${baseUrl}${query}${limitQuery}`;
+  const fragment =
+    params.startDate || params.endDate
+      ? `#applied_date>=${params.startDate ?? ""}&applied_date<=${params.endDate ?? ""}`
+      : "";
+  return `${baseUrl}${query}${limitQuery}${fragment}`;
 }
 
 function isRateLimited(result: unknown): boolean {
